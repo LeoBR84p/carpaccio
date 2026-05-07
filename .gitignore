@@ -1,0 +1,7 @@
+ffmpeg/
+.venv/
+__pycache__/
+*.pyc
+.claude/
+*.mp4
+concat_list.txt
