@@ -40,16 +40,22 @@ FFPROBE = str(_BUNDLED_FFPROBE) if _BUNDLED_FFPROBE.exists() else "ffprobe"
 
 # Full GPU pipeline: decode on GPU, keep frames in CUDA memory, encode on GPU
 HWACCEL_FLAGS = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+# CUDA decode without pinning frames in GPU memory — required when CPU filters (setpts) are used
+HWACCEL_FLAGS_DECODE = ["-hwaccel", "cuda"]
+
+_SHARPEN = "unsharp=5:5:1.5:5:5:0.0"
 
 ENCODE_FLAGS_H264 = [
     "-map", "0:v:0", "-map", "0:a:0",
     "-c:v", "h264_nvenc", "-cq", "26", "-b:v", "0", "-preset", "p6",
+    "-vf", _SHARPEN,
     "-c:a", "copy",
 ]
 
 ENCODE_FLAGS_AV1 = [
     "-map", "0:v:0", "-map", "0:a:0",
     "-c:v", "av1_nvenc", "-preset", "p7", "-cq", "38",
+    "-vf", _SHARPEN,
     "-c:a", "copy",
 ]
 
@@ -57,9 +63,11 @@ ENCODE_FLAGS_AV1_CAPPED = [
     "-map", "0:v:0", "-map", "0:a:0",
     "-c:v", "av1_nvenc", "-preset", "p7", "-cq", "32",
     "-maxrate", "900k", "-bufsize", "1800k",
+    "-vf", _SHARPEN,
     "-c:a", "copy",
 ]
 
+_NVENC_MAP = {"h264": "h264_nvenc", "hevc": "hevc_nvenc", "av1": "av1_nvenc"}
 
 DEFAULT_WORKERS = 2
 
@@ -95,6 +103,8 @@ class _Analysis(TypedDict):
     duration: float
     current_size: int
     est_size: int | None
+    encode_flags: list[str]
+    out_ext: str
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +125,12 @@ def _fmt_duration(secs: float) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
+def _fmt_reduction(reduction: float) -> str:
+    if reduction >= 0:
+        return f"[green]-{reduction:.0f}%[/green]"
+    return f"[red]+{-reduction:.0f}%[/red]"
+
+
 def _unique_output(path: Path, stem_suffix: str = "_cq26", ext: str | None = None) -> Path:
     out_ext = ext or path.suffix
     candidate = Path(path.parent) / (path.stem + stem_suffix + out_ext)
@@ -126,28 +142,123 @@ def _unique_output(path: Path, stem_suffix: str = "_cq26", ext: str | None = Non
 
 
 # ---------------------------------------------------------------------------
-# Mode selection
+# Mode & speed selection
 # ---------------------------------------------------------------------------
 
 class EncodeMode:
-    def __init__(self, flags: list[str], stem_suffix: str, ext: str, label: str) -> None:
+    def __init__(
+        self, flags: list[str], stem_suffix: str, ext: str, label: str,
+        passthrough: bool = False,
+    ) -> None:
         self.flags       = flags
         self.stem_suffix = stem_suffix
         self.ext         = ext
         self.label       = label
+        self.passthrough = passthrough  # True = keep source codec (mode 0)
+
+
+class SpeedMode:
+    def __init__(self, multiplier: float, label: str, suffix: str) -> None:
+        self.multiplier = multiplier
+        self.label      = label
+        self.suffix     = suffix
 
 
 def _select_mode() -> EncodeMode:
     console.print("\n[bold]Encode mode:[/bold]")
+    console.print("  [cyan][0][/cyan] Keep format · detect source codec         [dim](speed-change only)[/dim]")
     console.print("  [cyan][1][/cyan] H.264       · h264_nvenc · CQ 26 · p6 · MP4  [dim](size reduction)[/dim]")
     console.print("  [cyan][2][/cyan] AV1         · av1_nvenc  · CQ 38 · p7 · MKV  [dim](maximum compression)[/dim]")
     console.print("  [cyan][3][/cyan] AV1 capped  · av1_nvenc  · CQ 32 · p7 · MKV  [dim](maxrate 900k — guaranteed reduction)[/dim]")
-    choice = console.input("\nChoice [bold][1/2/3][/bold] (default: 1): ").strip()
+    choice = console.input("\nChoice [bold][0/1/2/3][/bold] (default: 1): ").strip()
+    if choice == "0":
+        return EncodeMode([], "_spd", "", "Keep format — detect source codec", passthrough=True)
     if choice == "2":
         return EncodeMode(ENCODE_FLAGS_AV1, "_av1", ".mkv", "av1_nvenc · CQ 38 · p7 · audio copy")
     if choice == "3":
         return EncodeMode(ENCODE_FLAGS_AV1_CAPPED, "_av1cap", ".mkv", "av1_nvenc · CQ 32 · maxrate 900k · p7 · audio copy")
     return EncodeMode(ENCODE_FLAGS_H264, "_cq26", ".mp4", "h264_nvenc · CQ 26 · p6 · audio copy")
+
+
+def _select_speed() -> SpeedMode:
+    console.print("\n[bold]Output speed:[/bold]")
+    console.print("  [cyan][1][/cyan] 0.5x  · Slow down          [dim](2x longer)[/dim]")
+    console.print("  [cyan][2][/cyan] 1x    · Normal speed        [dim](no change)[/dim]")
+    console.print("  [cyan][3][/cyan] 1.5x  · Hurry               [dim](33% shorter)[/dim]")
+    console.print("  [cyan][4][/cyan] 2x    · No time to lose     [dim](50% shorter)[/dim]")
+    console.print("  [cyan][5][/cyan] 2.5x  · Quick               [dim](60% shorter)[/dim]")
+    console.print("  [cyan][6][/cyan] 3x    · Flash               [dim](67% shorter)[/dim]")
+    choice = console.input("\nChoice [bold][1/2/3/4/5/6][/bold] (default: 2): ").strip()
+    if choice == "1":
+        return SpeedMode(0.5, "0.5x · Slow down", "_0.5x")
+    if choice == "3":
+        return SpeedMode(1.5, "1.5x · Hurry", "_1.5x")
+    if choice == "4":
+        return SpeedMode(2.0, "2x · No time to lose", "_2x")
+    if choice == "5":
+        return SpeedMode(2.5, "2.5x · Quick", "_2.5x")
+    if choice == "6":
+        return SpeedMode(3.0, "3x · Flash", "_3x")
+    return SpeedMode(1.0, "1x · Normal", "")
+
+
+# ---------------------------------------------------------------------------
+# Speed helpers
+# ---------------------------------------------------------------------------
+
+def _apply_speed_to_flags(flags: list[str], speed: float) -> list[str]:
+    """Insert setpts/atempo filters. Merges with existing -vf. Replaces -c:a copy with aac."""
+    if speed == 1.0:
+        return flags
+    flags = list(flags)
+    try:
+        idx = flags.index("-c:a")
+        if idx + 1 < len(flags) and flags[idx + 1] == "copy":
+            flags[idx + 1] = "aac"
+            flags[idx + 2:idx + 2] = ["-b:a", "192k"]
+    except ValueError:
+        flags += ["-c:a", "aac", "-b:a", "192k"]
+    setpts = f"setpts=PTS/{speed}"
+    af = f"atempo={speed}" if speed <= 2.0 else f"atempo=2.0,atempo={speed / 2.0:.4f}"
+    try:
+        vf_idx = flags.index("-vf")
+        flags[vf_idx + 1] = flags[vf_idx + 1] + f",{setpts}"
+    except ValueError:
+        flags += ["-vf", setpts]
+    flags += ["-af", af]
+    return flags
+
+
+def _passthrough_flags(
+    source_codec: str, speed: float, source_kbps: int = 0,
+) -> tuple[list[str], str]:
+    """Build flags for mode 0 (keep source codec). Returns (flags, ext_override).
+    ext_override='' means keep the source file extension."""
+    base = ["-map", "0:v:0", "-map", "0:a:0"]
+    if speed == 1.0:
+        return base + ["-c:v", "copy", "-c:a", "copy"], ""
+    nvenc     = _NVENC_MAP.get(source_codec, "h264_nvenc")
+    ext       = ".mkv" if nvenc == "av1_nvenc" else ".mp4"
+    vf        = f"setpts=PTS/{speed}"
+    af        = f"atempo={speed}" if speed <= 2.0 else f"atempo=2.0,atempo={speed / 2.0:.4f}"
+    # Target source bitrate so output size scales proportionally with speed:
+    #   new_size ≈ (duration / speed) × source_kbps / 8 = current_size / speed
+    audio_kbps = 192
+    video_kbps = max(500, source_kbps - audio_kbps) if source_kbps else 2000
+    return (base + [
+        "-c:v", nvenc,
+        "-b:v", f"{video_kbps}k",
+        "-maxrate", f"{int(video_kbps * 1.5)}k",
+        "-bufsize", f"{video_kbps * 3}k",
+        "-preset", "p4",
+        "-c:a", "aac", "-b:a", f"{audio_kbps}k",
+        "-vf", vf, "-af", af,
+    ], ext)
+
+
+def _hwaccel_for(flags: list[str]) -> list[str]:
+    """Use plain CUDA decode (no output_format=cuda) when CPU filters like setpts are present."""
+    return HWACCEL_FLAGS_DECODE if "-vf" in flags else HWACCEL_FLAGS
 
 
 # ---------------------------------------------------------------------------
@@ -179,15 +290,20 @@ def probe_file(path: Path) -> _ProbeResult:
 # 1-minute preview encode
 # ---------------------------------------------------------------------------
 
-def _make_preview(path: Path, duration: float, encode_flags: list[str], ext: str) -> Path | None:
-    seek_to = max(0.0, duration / 2 - 30)
+def _make_preview(
+    path: Path, duration: float, encode_flags: list[str], ext: str, speed: float = 1.0,
+) -> Path | None:
+    # Use input duration limit (before -i) so output is always ~60s regardless of speed
+    input_dur = 60.0 * speed
+    seek_to   = max(0.0, duration / 2 - input_dur / 2)
     preview_path = path.with_stem(path.stem + "_preview").with_suffix(ext)
 
+    hwaccel = _hwaccel_for(encode_flags)
     cmd = [
         FFMPEG, "-y",
         "-ss", str(seek_to),
-        *HWACCEL_FLAGS, "-i", str(path),
-        "-t", "60",
+        "-t", str(input_dur),   # input limit — placed before -i
+        *hwaccel, "-i", str(path),
         *encode_flags,
         "-progress", "pipe:1", "-nostats", "-loglevel", "error",
         str(preview_path),
@@ -219,19 +335,27 @@ def _make_preview(path: Path, duration: float, encode_flags: list[str], ext: str
 # Sample encode → size estimate
 # ---------------------------------------------------------------------------
 
-def estimate_output_size(path: Path, duration: float, encode_flags: list[str]) -> int | None:
+def estimate_output_size(
+    path: Path, duration: float, encode_flags: list[str],
+    ext: str = ".mp4", speed: float = 1.0,
+) -> int | None:
     if duration <= 0:
         return None
+    # -t is placed before -i (input limit): consumes sample_dur seconds of input,
+    # producing sample_dur/speed seconds of output. Formula scales to output duration.
     sample_dur = min(30.0, duration)
     seek_to = min(max(duration * 0.05, 30.0), max(duration - sample_dur - 5, 0))
+    output_duration = duration / speed
+
+    hwaccel = _hwaccel_for(encode_flags)
 
     with tempfile.TemporaryDirectory() as tmp:
-        sample_out = Path(tmp) / "sample.mp4"
+        sample_out = Path(tmp) / f"sample{ext}"
         cmd = [
             FFMPEG, "-y",
             "-ss", str(seek_to),
-            *HWACCEL_FLAGS, "-i", str(path),
-            "-t", str(sample_dur),
+            "-t", str(sample_dur),   # input limit — before -i
+            *hwaccel, "-i", str(path),
             *encode_flags,
             "-loglevel", "error",
             str(sample_out),
@@ -240,8 +364,9 @@ def estimate_output_size(path: Path, duration: float, encode_flags: list[str]) -
         if r.returncode != 0 or not sample_out.exists():
             cmd_cpu = [
                 FFMPEG, "-y",
-                "-ss", str(seek_to), "-i", str(path),
-                "-t", str(sample_dur),
+                "-ss", str(seek_to),
+                "-t", str(sample_dur),   # input limit — before -i
+                "-i", str(path),
                 *encode_flags,
                 "-loglevel", "error",
                 str(sample_out),
@@ -250,7 +375,9 @@ def estimate_output_size(path: Path, duration: float, encode_flags: list[str]) -
             if r.returncode != 0 or not sample_out.exists():
                 return None
         sample_bytes = sample_out.stat().st_size
-        return int(sample_bytes / sample_dur * duration)
+        # sample encodes sample_dur/speed seconds of output → bytes per output second:
+        sample_output_dur = sample_dur / speed
+        return int(sample_bytes / sample_output_dur * output_duration)
 
 
 # ---------------------------------------------------------------------------
@@ -265,9 +392,10 @@ def encode_file(
     task_id: TaskID,
     encode_flags: list[str] = ENCODE_FLAGS_H264,
 ) -> None:
+    hwaccel = _hwaccel_for(encode_flags)
     cmd = [
         FFMPEG, "-y",
-        *HWACCEL_FLAGS, "-i", str(path),
+        *hwaccel, "-i", str(path),
         *encode_flags,
         "-progress", "pipe:1", "-nostats", "-loglevel", "error",
         str(output),
@@ -291,7 +419,6 @@ def encode_file(
     proc.wait()
 
     if proc.returncode != 0:
-        # hwaccel failed mid-encode — retry without GPU decode
         err = "".join(stderr_buf)
         if "cuda" in err.lower() or "hwaccel" in err.lower():
             _encode_file_cpu(path, output, duration, progress, task_id, encode_flags)
@@ -373,9 +500,13 @@ def main() -> None:
     files = [Path(p) for p in selected]
     console.print(f"\n[bold]{len(files)} file(s) selected[/bold]\n")
 
-    mode = _select_mode()
+    mode  = _select_mode()
+    speed = _select_speed()
 
-    # Analyze files (sequentially — I/O bound, no need to parallelize)
+    # e.g. "_cq26_1.5x", "_spd_2x", "_av1"
+    final_suffix = mode.stem_suffix + speed.suffix
+
+    # Analyze files (sequentially — I/O bound)
     analyses: list[_Analysis] = []
 
     for path in files:
@@ -390,25 +521,40 @@ def main() -> None:
         kbps         = int(fmt.get("bit_rate") or 0) // 1000
         w            = video.get("width",  "?")
         h            = video.get("height", "?")
-        codec        = video.get("codec_name", "?")
+        codec        = video.get("codec_name", "h264")
         try:
             a, b = video.get("avg_frame_rate", "0/1").split("/")
             fps = f"{round(int(a) / int(b), 1)}" if int(b) else "?"
         except Exception:
             fps = "?"
 
-        with Live(
-            Text("  Estimating output size...", style="dim"),
-            console=console, refresh_per_second=4,
-        ):
-            est_size = estimate_output_size(path, duration, mode.flags)
+        if mode.passthrough:
+            final_flags, ext_override = _passthrough_flags(codec, speed.multiplier, kbps)
+            out_ext = ext_override if ext_override else path.suffix
+        else:
+            final_flags = _apply_speed_to_flags(mode.flags, speed.multiplier)
+            out_ext = mode.ext
 
-        if est_size:
+        is_copy = mode.passthrough and speed.multiplier == 1.0
+        if is_copy:
+            est_size = current_size
+        else:
+            with Live(
+                Text("  Estimating output size...", style="dim"),
+                console=console, refresh_per_second=4,
+            ):
+                est_size = estimate_output_size(
+                    path, duration, final_flags, out_ext or ".mp4", speed.multiplier,
+                )
+
+        if is_copy:
+            console.print(f"  {_fmt_size(current_size)} → [dim]copy (same size)[/dim]")
+        elif est_size:
             reduction = (1 - est_size / current_size) * 100
             console.print(
                 f"  {_fmt_size(current_size)} → "
                 f"[cyan]{_fmt_size(est_size)}[/cyan]  "
-                f"([green]-{reduction:.0f}%[/green])"
+                f"({_fmt_reduction(reduction)})"
             )
         else:
             console.print(f"  {_fmt_size(current_size)} → [yellow]estimate unavailable[/yellow]")
@@ -417,6 +563,7 @@ def main() -> None:
             "path": path, "w": w, "h": h, "codec": codec, "fps": fps,
             "kbps": kbps, "duration": duration,
             "current_size": current_size, "est_size": est_size,
+            "encode_flags": final_flags, "out_ext": out_ext,
         })
 
     # Summary table
@@ -432,14 +579,20 @@ def main() -> None:
     table.add_column("Reduction",  justify="right")
 
     total_current = total_estimated = 0
+    is_copy_mode = mode.passthrough and speed.multiplier == 1.0
 
     for a in analyses:
-        est_str = red_str = "[yellow]?[/yellow]"
-        if a["est_size"]:
+        if is_copy_mode:
+            est_str = f"[dim]{_fmt_size(a['current_size'])}[/dim]"
+            red_str = "[dim]copy[/dim]"
+            total_estimated += a["current_size"]
+        elif a["est_size"]:
             reduction = (1 - a["est_size"] / a["current_size"]) * 100
             est_str = f"[cyan]{_fmt_size(a['est_size'])}[/cyan]"
-            red_str = f"[green]-{reduction:.0f}%[/green]"
+            red_str = _fmt_reduction(reduction)
             total_estimated += a["est_size"]
+        else:
+            est_str = red_str = "[yellow]?[/yellow]"
         total_current += a["current_size"]
 
         table.add_row(
@@ -460,7 +613,7 @@ def main() -> None:
             "[bold]TOTAL[/bold]", "", "", "", "",
             f"[bold]{_fmt_size(total_current)}[/bold]",
             f"[bold cyan]{_fmt_size(total_estimated)}[/bold cyan]",
-            f"[bold green]-{reduction_total:.0f}%[/bold green]",
+            f"[bold]{_fmt_reduction(reduction_total)}[/bold]",
         )
 
     console.print(Panel(
@@ -469,14 +622,30 @@ def main() -> None:
         border_style="cyan",
     ))
     workers = min(DEFAULT_WORKERS, len(files))
-    console.print(f"[dim]Encoder: {mode.label} · Workers: {workers}[/dim]")
+    console.print(f"[dim]Encoder: {mode.label} · Speed: {speed.label} · Workers: {workers}[/dim]")
 
-    # Optional preview
-    want_preview = console.input("\nGenerate a 1-minute preview before proceeding? [bold][Y/n][/bold]: ").strip().lower()
+    # Optional 1-minute preview (1 min of output; input window = 60s × speed)
+    first = analyses[0]
+    input_needed = 60.0 * speed.multiplier
+    if speed.multiplier != 1.0:
+        preview_label = (
+            f"1 min preview  "
+            f"[dim](reads {_fmt_duration(input_needed)} of input → 1:00 of output)[/dim]"
+        )
+    else:
+        preview_label = "1 min preview"
+
+    want_preview = console.input(
+        f"\nGenerate {preview_label} before proceeding? [bold][Y/n][/bold]: "
+    ).strip().lower()
+
     if want_preview in ("", "y", "yes"):
-        first = analyses[0]
         console.print(f"\nEncoding preview for [cyan]{first['path'].name}[/cyan] (middle segment)...")
-        preview_path = _make_preview(first["path"], first["duration"], mode.flags, mode.ext)
+        preview_ext = first["out_ext"] if first["out_ext"] else first["path"].suffix
+        preview_path = _make_preview(
+            first["path"], first["duration"],
+            first["encode_flags"], preview_ext, speed.multiplier,
+        )
         if preview_path:
             console.print(f"[green]Preview saved:[/green] {preview_path}")
             os.startfile(str(preview_path))
@@ -495,9 +664,15 @@ def main() -> None:
 
     # Parallel encode with shared progress bar
     console.print()
-    outputs = {a["path"]: _unique_output(a["path"], mode.stem_suffix, mode.ext) for a in analyses}
-    results: dict[Path, tuple[bool, str]] = {}  # path → (ok, message)
+    outputs = {
+        a["path"]: _unique_output(a["path"], final_suffix, a["out_ext"] or None)
+        for a in analyses
+    }
+    results: dict[Path, tuple[bool, str]] = {}
     lock = threading.Lock()
+
+    def _out_dur(a: _Analysis) -> float:
+        return (a["duration"] / speed.multiplier) if a["duration"] else 0.0
 
     with Progress(
         TextColumn("[progress.description]{task.description}"),
@@ -506,22 +681,26 @@ def main() -> None:
         console=console,
     ) as progress:
         task_ids = {
-            a["path"]: progress.add_task(a["path"].name[:45], total=a["duration"] or None)
+            a["path"]: progress.add_task(
+                a["path"].name[:45],
+                total=_out_dur(a) or None,
+            )
             for a in analyses
         }
 
         def _run(a: _Analysis) -> None:
             path   = a["path"]
             output = outputs[path]
+            dur    = _out_dur(a)
             try:
-                encode_file(path, output, a["duration"], progress, task_ids[path], mode.flags)
+                encode_file(path, output, dur, progress, task_ids[path], a["encode_flags"])
                 final_size = output.stat().st_size
                 reduction  = (1 - final_size / a["current_size"]) * 100
                 msg = (
                     f"[green]✓[/green] [cyan]{path.name}[/cyan]  "
                     f"{_fmt_size(a['current_size'])} → "
                     f"[cyan]{_fmt_size(final_size)}[/cyan]  "
-                    f"([green]-{reduction:.0f}%[/green])"
+                    f"({_fmt_reduction(reduction)})"
                 )
                 with lock:
                     results[path] = (True, msg)
@@ -532,7 +711,7 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures: dict[Future[None], _Analysis] = {pool.submit(_run, a): a for a in analyses}
             for f in as_completed(futures):
-                f.result()  # re-raise any unexpected exception
+                f.result()
 
     # Print results in original order
     console.print()

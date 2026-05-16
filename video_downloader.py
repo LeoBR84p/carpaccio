@@ -267,37 +267,55 @@ def merge_segments(
     segment_files: list[Path],
     output: Path,
     sharpen: bool = False,
+    speed: float = 1.0,
     total_seconds: float = 0.0,
     est_bytes: int = 0,
 ) -> None:
-    """Concatenate .ts files and remux via ffmpeg with a live progress bar."""
+    """Concatenate .ts files and remux (or re-encode) via ffmpeg with a live progress bar."""
     concat_list = segment_files[0].parent / "concat_list.txt"
     with open(concat_list, "w") as f:
         for seg in segment_files:
             f.write(f"file '{seg.resolve()}'\n")
 
     base = [FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list)]
-    if sharpen:
+
+    needs_encode = sharpen or speed != 1.0
+    if needs_encode:
         if not _nvenc_available():
             raise RuntimeError(
                 "NVENC não disponível nesta build do ffmpeg. "
                 "Instale uma build com suporte CUDA (ex: https://github.com/BtbN/FFmpeg-Builds/releases) "
-                "ou remova --sharpen para usar cópia direta sem reencoding."
+                "ou remova --sharpen e use speed 1x para cópia direta."
             )
-        console.print("[cyan]Encoder:[/cyan] h264_nvenc (GPU) + unsharp (CPU)")
-        encode = [
+        vf_parts: list[str] = []
+        if sharpen:
+            vf_parts.append("unsharp=5:5:1.5:5:5:0.0")
+        if speed != 1.0:
+            vf_parts.append(f"setpts=PTS/{speed}")
+
+        encode: list[str] = [
             "-map", "0:v:0", "-map", "0:a:0",
-            "-vf", "unsharp=5:5:1.5:5:5:0.0",
-            "-c:v", "h264_nvenc", "-cq", "26", "-b:v", "0", "-preset", "p6", "-c:a", "copy",
+            "-c:v", "h264_nvenc", "-cq", "26", "-b:v", "0", "-preset", "p6",
+            "-vf", ",".join(vf_parts),
         ]
+        if speed != 1.0:
+            af = f"atempo={speed}" if speed <= 2.0 else f"atempo=2.0,atempo={speed / 2.0:.4f}"
+            encode += ["-c:a", "aac", "-b:a", "192k", "-af", af]
+        else:
+            encode += ["-c:a", "copy"]
+
+        label_parts = (["unsharp"] if sharpen else []) + ([f"{speed}x"] if speed != 1.0 else [])
+        console.print(f"[cyan]Encoder:[/cyan] h264_nvenc (GPU) + {' + '.join(label_parts)}")
     else:
         encode = ["-c", "copy"]
+
     cmd = base + encode + ["-progress", "pipe:1", "-nostats", "-loglevel", "error", str(output)]
 
     console.print(f"\nMerging [cyan]{len(segment_files)}[/cyan] segments → [green]{output}[/green]")
 
-    use_duration = total_seconds > 0
-    total = total_seconds if use_duration else (est_bytes if est_bytes > 0 else None)
+    output_seconds = total_seconds / speed if total_seconds > 0 else 0.0
+    use_duration = output_seconds > 0
+    total = output_seconds if use_duration else (est_bytes if est_bytes > 0 else None)
 
     columns: list[ProgressColumn] = (
         [TextColumn("[progress.description]{task.description}"),
@@ -324,7 +342,7 @@ def merge_segments(
             if use_duration and line.startswith("out_time_ms="):
                 try:
                     secs = int(line.split("=")[1]) / 1_000_000
-                    progress.update(task, completed=min(secs, total_seconds))
+                    progress.update(task, completed=min(secs, output_seconds))
                 except ValueError:
                     pass
             elif not use_duration and est_bytes and line.startswith("total_size="):
@@ -405,10 +423,15 @@ def _quality_grade(height: int, kbps: int) -> tuple[str, str, str, int | None]:
     return name, label, color, nf
 
 
-def show_quality_report(url: str, kbps: int, sharpen: bool) -> tuple[bool, bool]:
+_SPEED_CHOICES: dict[str, float] = {
+    "1": 0.5, "2": 1.0, "3": 1.5, "4": 2.0, "5": 2.5, "6": 3.0,
+}
+
+
+def show_quality_report(url: str, kbps: int, sharpen: bool) -> tuple[bool, bool, float]:
     """
     Display quality info and ask for confirmation.
-    Returns (proceed, use_sharpen).
+    Returns (proceed, use_sharpen, speed).
     """
     from rich.table import Table
     from rich.panel import Panel
@@ -452,8 +475,18 @@ def show_quality_report(url: str, kbps: int, sharpen: bool) -> tuple[bool, bool]
         sharpen_answer = console.input("Ativar --sharpen? [bold][Y/n][/bold]: ").strip().lower()
         use_sharpen = sharpen_answer in ("", "y", "yes", "s", "sim")
 
+    console.print("\n[bold]Output speed:[/bold]")
+    console.print("  [cyan][1][/cyan] 0.5x  · Slow down          [dim](2x longer)[/dim]")
+    console.print("  [cyan][2][/cyan] 1x    · Normal speed        [dim](no change)[/dim]")
+    console.print("  [cyan][3][/cyan] 1.5x  · Hurry               [dim](33% shorter)[/dim]")
+    console.print("  [cyan][4][/cyan] 2x    · No time to lose     [dim](50% shorter)[/dim]")
+    console.print("  [cyan][5][/cyan] 2.5x  · Quick               [dim](60% shorter)[/dim]")
+    console.print("  [cyan][6][/cyan] 3x    · Flash               [dim](67% shorter)[/dim]")
+    speed_choice = console.input("\nChoice [bold][1/2/3/4/5/6][/bold] (default: 2): ").strip()
+    speed = _SPEED_CHOICES.get(speed_choice, 1.0)
+
     answer = console.input("\nProsseguir com o download? [bold][Y/n][/bold]: ").strip().lower()
-    return answer in ("", "y", "yes", "s", "sim"), use_sharpen
+    return answer in ("", "y", "yes", "s", "sim"), use_sharpen, speed
 
 
 # ---------------------------------------------------------------------------
@@ -541,7 +574,7 @@ def main():
 
     # -- Quality probe & confirmation ------------------------------------------
     probe_url = args.m3u8 if args.m3u8 else urls[0]
-    proceed, use_sharpen = show_quality_report(
+    proceed, use_sharpen, speed = show_quality_report(
         probe_url,
         est_bytes * 8 // max(int(total_seconds), 1) // 1000 if est_bytes and total_seconds else 0,
         args.sharpen,
@@ -554,7 +587,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="ts_segments_") as tmp:
         work_dir = Path(tmp)
         segment_files = download_segments(urls, work_dir, workers=args.workers)
-        merge_segments(segment_files, output, sharpen=use_sharpen,
+        merge_segments(segment_files, output, sharpen=use_sharpen, speed=speed,
                        total_seconds=total_seconds, est_bytes=est_bytes or 0)
 
         if args.keep_segments:
