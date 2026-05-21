@@ -93,3 +93,68 @@ A file picker dialog opens for selecting one or more videos. After selection:
 All modes use full GPU pipeline (decode + encode on GPU) with 2 parallel workers.
 
 Output files are saved alongside the originals with a suffix: `_cq26`, `_av1`, or `_av1cap`.
+
+---
+
+## extract_video.py
+
+Extract video URLs from HTML copied from a video page and generate ready-to-run ffmpeg download commands.
+
+Useful when a page serves a direct `.mp4` (not HLS segments) with signed CDN URLs embedded in the HTML source.
+
+### Usage
+
+```bash
+# Read HTML from a file
+python extract_video.py page.html
+
+# Read HTML from stdin (paste, then press Enter + Ctrl+Z + Enter on Windows)
+python extract_video.py -
+
+# Read HTML from clipboard (requires: pip install pyperclip)
+python extract_video.py
+```
+
+### Example output
+
+```text
+Encontradas 3 qualidades:
+
+  [240]  0hkh1xwa6j80qjcsiigdk_240p.mp4
+  .\ffmpeg\bin\ffmpeg.exe -i "https://cdn2.xpto.com/..." -c copy 0hkh1xwa6j80qjcsiigdk_240p.mp4
+
+  [720]  0hkh1xwa6j80qjcsiigdk_720p.mp4
+  .\ffmpeg\bin\ffmpeg.exe -i "https://cdn2.xpto.com/..." -c copy 0hkh1xwa6j80qjcsiigdk_720p.mp4
+
+  [original]  0hkh1xwa6j80qjcsiigdk_source.mp4
+  .\ffmpeg\bin\ffmpeg.exe -i "https://cdn2.xpto.com/..." -c copy 0hkh1xwa6j80qjcsiigdk_source.mp4
+```
+
+Copy the desired ffmpeg command and run it directly. The script handles `&amp;` HTML entity decoding automatically.
+
+---
+
+## join_videos.py
+
+Join multiple MP4 files into one without re-encoding — codec, resolution, bitrate, and all stream settings are preserved exactly.
+
+### Joiner Usage
+
+```bash
+python join_videos.py <number_of_videos>
+```
+
+File picker dialogs open in sequence — one per video, in the order they will be joined — followed by a "Save as" dialog for the output file. The output filename defaults to `<first_video>_joined.mp4`.
+
+```bash
+python join_videos.py 2   # join 2 videos
+python join_videos.py 4   # join 4 videos
+```
+
+If the chosen output file already exists, the script asks for confirmation before overwriting.
+
+### How the joiner works
+
+1. A list file with the selected paths is written to a temp file.
+2. ffmpeg reads it via the concat demuxer with `-c copy` (no re-encoding).
+3. The temp file is deleted automatically after the process finishes.
