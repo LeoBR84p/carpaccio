@@ -9,4 +9,5 @@ dependencies = [
     "pyperclip>=1.11.0",
     "requests>=2.34.2",
     "rich>=15.0.0",
+    "yt-dlp>=2024.1.1",
 ]
