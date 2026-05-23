@@ -5,3 +5,4 @@ __pycache__/
 .claude/
 *.mp4
 concat_list.txt
+.playwright-mcp
