@@ -83,13 +83,19 @@ YOUTUBE_RE = re.compile(
     r"^https?://(?:www\.)?(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/)([A-Za-z0-9_-]{11})"
 )
 
+URL_RE = re.compile(r"^https?://\S+$")
+
 
 def is_youtube_url(text: str) -> bool:
     return bool(YOUTUBE_RE.match(text.strip()))
 
 
-def extract_sources_youtube(url: str) -> tuple[list[dict[str, str]], str]:
-    """Retorna (sources, safe_title) para uma URL do YouTube via yt-dlp."""
+def is_plain_url(text: str) -> bool:
+    return bool(URL_RE.match(text.strip()))
+
+
+def extract_sources_ytdlp(url: str) -> tuple[list[dict[str, str]], str]:
+    """Retorna (sources, safe_title) para qualquer URL suportada pelo yt-dlp."""
     try:
         result = subprocess.run(
             ["yt-dlp", "--no-playlist", "-j", url],
@@ -120,6 +126,12 @@ def extract_sources_youtube(url: str) -> tuple[list[dict[str, str]], str]:
         seen.add(label)
         sources.append({"url": fmt["url"], "label": label})
 
+    # fallback: formato único sem lista de formats (e.g. direct stream)
+    if not sources and info.get("url"):
+        height = info.get("height")
+        label = str(height) if height else "original"
+        sources.append({"url": info["url"], "label": label})
+
     return sources, safe_title
 
 
@@ -146,16 +158,18 @@ def main():
             print("pyperclip não instalado. Cole o HTML/URL abaixo e pressione Ctrl+Z + Enter:")
             raw = sys.stdin.read()
 
-    # YouTube URL (youtu.be/... ou youtube.com/watch?v=...)
-    if is_youtube_url(raw.strip()):
-        sources, safe_title = extract_sources_youtube(raw.strip())
+    # URL direta: usa yt-dlp para qualquer site suportado
+    if is_plain_url(raw.strip()):
+        sources, safe_title = extract_sources_ytdlp(raw.strip())
         if not sources:
             print("Nenhum formato de vídeo encontrado via yt-dlp.")
             sys.exit(1)
         print(f"\nEncontradas {len(sources)} qualidades para '{safe_title}':\n")
         for s in sources:
-            out = f"{safe_title}_{s['label']}p.mp4"
-            print(f"  [{s['label']}p]  {out}")
+            label = s["label"]
+            suffix = f"_{label}p" if label.isdigit() else f"_{label}"
+            out = f"{safe_title}{suffix}.mp4"
+            print(f"  [{label}]  {out}")
             print(f'  {FFMPEG} -i "{s["url"]}" -c copy "{out}"')
             print()
         return
