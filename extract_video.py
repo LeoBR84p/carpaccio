@@ -352,6 +352,97 @@ class YtdlpError(Exception):
     pass
 
 
+REDGIFS_API = "https://api.redgifs.com/v2"
+
+
+def _redgifs_token() -> str:
+    req = urllib.request.Request(
+        f"{REDGIFS_API}/auth/temporary",
+        headers={"User-Agent": _UA},
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())["token"]
+
+
+def _redgifs_request(path: str, token: str) -> dict:
+    req = urllib.request.Request(
+        f"{REDGIFS_API}{path}",
+        headers={"User-Agent": _UA, "Authorization": f"Bearer {token}"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
+
+
+def _redgifs_gif_sources(gif: dict) -> list[dict[str, str]]:
+    urls = gif.get("urls", {})
+    sources = []
+    for label, key in [("hd", "hd"), ("sd", "sd")]:
+        u = urls.get(key)
+        if u:
+            sources.append({"url": u, "label": label, "referer": "https://www.redgifs.com/"})
+    return sources
+
+
+def _redgifs_extract(url: str) -> tuple[list[dict[str, str]], str, bool] | None:
+    """Returns (sources, title, is_user_page) or None on failure.
+
+    is_user_page=True: each source is a different video (label = gif_id).
+    is_user_page=False: sources are quality variants of a single video.
+    """
+    path = urlparse(url).path
+
+    try:
+        token = _redgifs_token()
+    except Exception as e:
+        print(f"[redgifs] Erro ao obter token: {e}", file=sys.stderr)
+        return None
+
+    m = re.match(r"^/watch/([A-Za-z0-9_-]+)", path)
+    if m:
+        gif_id = m.group(1)
+        try:
+            data = _redgifs_request(f"/gifs/{gif_id}", token)
+            gif = data.get("gif", {})
+            sources = _redgifs_gif_sources(gif)
+            title = re.sub(r'[\\/*?:"<>|]', "_", gif.get("id", gif_id))
+            return sources, title, False
+        except Exception as e:
+            print(f"[redgifs] Erro ao buscar gif: {e}", file=sys.stderr)
+            return None
+
+    m = re.match(r"^/users/([A-Za-z0-9_-]+)", path)
+    if m:
+        username = m.group(1)
+        print(f"[redgifs] Buscando vídeos de '{username}'...")
+        all_sources: list[dict[str, str]] = []
+        page = 1
+        try:
+            while True:
+                data = _redgifs_request(
+                    f"/users/{username}/search?order=new&count=80&page={page}", token
+                )
+                gifs = data.get("gifs") or []
+                for gif in gifs:
+                    gif_id = gif.get("id", "")
+                    urls_map = gif.get("urls", {})
+                    u = urls_map.get("hd") or urls_map.get("sd")
+                    if u and gif_id:
+                        all_sources.append({
+                            "url": u,
+                            "label": gif_id,
+                            "referer": "https://www.redgifs.com/",
+                        })
+                if page >= (data.get("pages") or 1):
+                    break
+                page += 1
+        except Exception as e:
+            print(f"[redgifs] Erro ao buscar usuário: {e}", file=sys.stderr)
+            return None
+        return all_sources, username, True
+
+    return None
+
+
 _BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -481,6 +572,34 @@ def main():
         url = raw.strip()
         sources: list[dict[str, str]] = []
         safe_title = ""
+
+        # RedGifs: usa API pública diretamente (SPA — scraping não funciona)
+        if "redgifs.com" in urlparse(url).netloc:
+            result = _redgifs_extract(url)
+            if result is None:
+                print("Falha ao acessar a API do RedGifs.", file=sys.stderr)
+                sys.exit(1)
+            sources, safe_title, is_user_page = result
+            if not sources:
+                print("Nenhum vídeo encontrado.")
+                sys.exit(1)
+            if is_user_page:
+                print(f"\nEncontrados {len(sources)} vídeos de '{safe_title}':\n")
+                for s in sources:
+                    out = f"{s['label']}.mp4"
+                    print(f"  {out}")
+                    print(f"  {_ffmpeg_cmd(s, out)}")
+                    print()
+            else:
+                print(f"\nEncontradas {len(sources)} qualidades para '{safe_title}':\n")
+                for s in sources:
+                    label = s["label"]
+                    out = f"{safe_title}_{label}.mp4"
+                    print(f"  [{label}]  {out}")
+                    print(f"  {_ffmpeg_cmd(s, out)}")
+                    print()
+            return
+
         try:
             sources, safe_title = extract_sources_ytdlp(url)
         except YtdlpError:
