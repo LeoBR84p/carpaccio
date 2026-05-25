@@ -355,6 +355,50 @@
     .plan-features li.dim::before { content: '—'; color: var(--border); }
     .stars-note { font-size: 12px; color: var(--muted); margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); font-style: italic; }
 
+    .pricing-table-wrap { margin-top: 48px; }
+    .pricing-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 14px;
+    }
+    .pricing-table thead th {
+      text-align: left; padding: 10px 16px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+      color: var(--muted); border-bottom: 1px solid var(--border);
+    }
+    .pricing-table tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
+    .pricing-table tbody tr:hover { background: var(--surface2); }
+    .pricing-table tbody tr.row-highlight { background: rgba(192,57,43,.06); }
+    .pricing-table tbody tr.row-highlight:hover { background: rgba(192,57,43,.12); }
+    .pricing-table td { padding: 14px 16px; color: var(--text); vertical-align: middle; }
+    .pricing-table td:first-child { font-weight: 600; }
+    .stars-cell { white-space: nowrap; font-weight: 800; font-size: 16px; color: var(--gold); display: flex; align-items: center; gap: 6px; }
+    .usd-cell { color: var(--muted); font-size: 13px; }
+    .pricing-table .row-highlight .stars-cell { color: var(--gold); }
+    .tier-badge {
+      display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      background: var(--red); color: #fff; padding: 2px 8px; border-radius: 99px;
+      text-transform: uppercase; margin-left: 8px; vertical-align: middle;
+    }
+
+    .pricing-examples {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 40px;
+    }
+    .pricing-example {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 20px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .pe-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+    .pe-quality { font-size: 13px; color: var(--text); margin-bottom: 4px; }
+    .pe-size { font-size: 13px; color: var(--muted); }
+    .pe-price { margin-top: 12px; font-size: 22px; font-weight: 900; color: var(--gold); display: flex; align-items: center; gap: 6px; }
+    .pe-price span { font-size: 13px; font-weight: 500; color: var(--muted); }
+
     .privacy-section { background: var(--surface); border-top: 1px solid var(--border); }
     .privacy-grid {
       display: grid;
@@ -753,63 +797,84 @@
   <div class="container">
     <div class="section-label">Pricing</div>
     <h2>Pay only for what you download.</h2>
-    <p class="section-intro">No subscriptions. No monthly fees. Each download is a standalone transaction paid with Telegram Stars.</p>
+    <p class="section-intro">No subscriptions. No monthly fees. Price is determined by file size — probed before you pay, so there are no surprises.</p>
 
-    <div class="pricing-cards">
-      <div class="pricing-card">
-        <div class="plan-name">Standard</div>
-        <div class="plan-price">
-          <span class="currency">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </span>
-          3 <span class="unit">/ download</span>
+    <div class="pricing-table-wrap">
+      <table class="pricing-table">
+        <thead>
+          <tr>
+            <th>File size</th>
+            <th>Stars</th>
+            <th>≈ USD</th>
+            <th>Typical content</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Audio only</td>
+            <td><div class="stars-cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> 25</div></td>
+            <td class="usd-cell">~$0.33</td>
+            <td>Podcast, song, album track</td>
+          </tr>
+          <tr class="row-highlight">
+            <td>≤ 100 MB <span class="tier-badge">social</span></td>
+            <td><div class="stars-cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> 75</div></td>
+            <td class="usd-cell">~$1.00</td>
+            <td>TikTok, Instagram Reel, YouTube Short</td>
+          </tr>
+          <tr>
+            <td>100 MB – 500 MB</td>
+            <td><div class="stars-cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> 150</div></td>
+            <td class="usd-cell">~$2.00</td>
+            <td>YouTube clip, TV series episode</td>
+          </tr>
+          <tr>
+            <td>500 MB – 2 GB</td>
+            <td><div class="stars-cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> 300</div></td>
+            <td class="usd-cell">~$4.00</td>
+            <td>Feature film 720p, full concert</td>
+          </tr>
+          <tr>
+            <td>2 GB – 5 GB</td>
+            <td><div class="stars-cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> 600</div></td>
+            <td class="usd-cell">~$8.00</td>
+            <td>Feature film 1080p, Blu-ray rip</td>
+          </tr>
+          <tr>
+            <td>5 GB+</td>
+            <td><div class="stars-cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> 1 000</div></td>
+            <td class="usd-cell">~$13.00</td>
+            <td>Feature film 4K, extended editions</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="stars-note">1 Star &asymp; $0.013 USD (minimum purchase rate inside Telegram). File size is probed via yt-dlp before the invoice is issued &mdash; you always know the cost upfront.</p>
+    </div>
+
+    <div class="pricing-examples">
+      <div class="pricing-example">
+        <div class="pe-label">1h 30min film &middot; 720p</div>
+        <div class="pe-size">≈ 1.6 GB &rarr; 500 MB – 2 GB tier</div>
+        <div class="pe-price">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          300 <span>~$4</span>
         </div>
-        <div class="plan-desc">Up to 720p &middot; Standard queue priority</div>
-        <ul class="plan-features">
-          <li>All 1000+ platforms</li>
-          <li>Up to 720p quality</li>
-          <li>Audio-only (MP3)</li>
-          <li>One-time download link</li>
-          <li class="dim">1080p or higher</li>
-          <li class="dim">Priority processing queue</li>
-        </ul>
       </div>
-      <div class="pricing-card featured">
-        <div class="plan-name">Full Quality</div>
-        <div class="plan-price">
-          <span class="currency">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </span>
-          5 <span class="unit">/ download</span>
+      <div class="pricing-example">
+        <div class="pe-label">1h 30min film &middot; 1080p</div>
+        <div class="pe-size">≈ 4 GB &rarr; 2 GB – 5 GB tier</div>
+        <div class="pe-price">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          600 <span>~$8</span>
         </div>
-        <div class="plan-desc">Up to original source quality &middot; Priority queue</div>
-        <ul class="plan-features">
-          <li>All 1000+ platforms</li>
-          <li>1080p, 4K, original formats</li>
-          <li>Audio-only (MP3 / FLAC)</li>
-          <li>One-time download link</li>
-          <li>Priority processing queue</li>
-          <li>Large file support (&gt; 2 GB)</li>
-        </ul>
-        <div class="stars-note">Best value for HD content. Original bitrate, no quality loss.</div>
       </div>
-      <div class="pricing-card">
-        <div class="plan-name">Batch</div>
-        <div class="plan-price">
-          <span class="currency">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </span>
-          2 <span class="unit">/ download</span>
+      <div class="pricing-example">
+        <div class="pe-label">1h 30min film &middot; 4K</div>
+        <div class="pe-size">≈ 13 GB &rarr; 5 GB+ tier</div>
+        <div class="pe-price">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          1 000 <span>~$13</span>
         </div>
-        <div class="plan-desc">10-download bundle &middot; Prepaid credit</div>
-        <ul class="plan-features">
-          <li>All 1000+ platforms</li>
-          <li>Up to 1080p quality</li>
-          <li>Audio-only (MP3)</li>
-          <li>One-time download links</li>
-          <li>Credits valid for 30 days</li>
-          <li class="dim">4K / source quality</li>
-        </ul>
       </div>
     </div>
   </div>
