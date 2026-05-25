@@ -33,6 +33,7 @@
       overflow-x: hidden;
     }
 
+    /* ── NOISE TEXTURE OVERLAY ─────────────────────────── */
     body::before {
       content: '';
       position: fixed;
@@ -43,10 +44,12 @@
       opacity: .5;
     }
 
+    /* ── LAYOUT HELPERS ───────────────────────────────── */
     .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
     .section { padding: 100px 0; }
     .section--sm { padding: 64px 0; }
 
+    /* ── NAV ──────────────────────────────────────────── */
     nav {
       position: sticky; top: 0; z-index: 100;
       background: rgba(7, 8, 10, 0.88);
@@ -80,6 +83,7 @@
     }
     .nav-cta:hover { background: #a93226; }
 
+    /* ── HERO ─────────────────────────────────────────── */
     .hero {
       min-height: 88vh;
       display: flex; align-items: center;
@@ -152,6 +156,7 @@
       margin-top: 64px;
       display: flex; gap: 40px; flex-wrap: wrap;
     }
+    .stat { }
     .stat-num {
       font-size: 32px; font-weight: 800;
       color: var(--text); letter-spacing: -1px;
@@ -159,6 +164,7 @@
     .stat-num span { color: var(--red); }
     .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-top: 2px; }
 
+    /* ── DEMO TERMINAL ────────────────────────────────── */
     .demo-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -200,6 +206,7 @@
     .quality-num { color: var(--red); font-weight: 700; }
     .quality-tag { background: rgba(192,57,43,.15); color: #e07070; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
 
+    /* ── HERO LAYOUT ──────────────────────────────────── */
     .hero-inner {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -212,6 +219,7 @@
       .demo-wrap { max-width: 100%; }
     }
 
+    /* ── HOW IT WORKS ─────────────────────────────────── */
     .section-label {
       font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
       color: var(--red); font-weight: 700; margin-bottom: 14px;
@@ -250,7 +258,11 @@
     .step-icon { font-size: 28px; margin-bottom: 12px; }
     .step h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
     .step p { font-size: 14px; color: var(--muted); line-height: 1.65; }
+    .step-connector {
+      display: none;
+    }
 
+    /* ── FEATURES ─────────────────────────────────────── */
     .features-bg {
       background: var(--surface);
       border-top: 1px solid var(--border);
@@ -280,6 +292,7 @@
     .feature h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
     .feature p { font-size: 13.5px; color: var(--muted); line-height: 1.65; }
 
+    /* ── ARCHITECTURE ─────────────────────────────────── */
     .arch-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -312,6 +325,7 @@
     }
     @media (max-width: 600px) { .arch-arrow { display: none; } }
 
+    /* ── PRICING ──────────────────────────────────────── */
     .pricing-cards {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -353,6 +367,7 @@
     .plan-features li.dim::before { content: '—'; color: var(--border); }
     .stars-note { font-size: 12px; color: var(--muted); margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); font-style: italic; }
 
+    /* ── PRIVACY SECTION ──────────────────────────────── */
     .privacy-section { background: var(--surface); border-top: 1px solid var(--border); }
     .privacy-grid {
       display: grid;
@@ -403,6 +418,7 @@
     .pd-arrow { color: var(--muted); font-size: 14px; }
     .pd-label { font-size: 10px; color: var(--muted); margin-left: auto; font-style: italic; }
 
+    /* ── TECH STACK ───────────────────────────────────── */
     .stack-grid {
       display: flex; flex-wrap: wrap; gap: 10px;
       margin-top: 32px;
@@ -425,6 +441,7 @@
     .stack-badge .dot.is { background: #5ac85a; }
     .stack-badge .dot.nginx { background: #009900; }
 
+    /* ── FAQ ──────────────────────────────────────────── */
     .faq-list { margin-top: 40px; }
     .faq-item {
       border-bottom: 1px solid var(--border);
@@ -445,6 +462,7 @@
     }
     .faq-item.open .faq-a { max-height: 400px; padding-top: 12px; }
 
+    /* ── FOOTER ───────────────────────────────────────── */
     footer {
       border-top: 1px solid var(--border);
       padding: 40px 0;
@@ -460,8 +478,13 @@
     .footer-links a:hover { color: var(--text); }
     .footer-note { font-size: 11px; color: #3a3d47; margin-top: 20px; text-align: center; }
 
-    .divider { height: 1px; background: var(--border); margin: 0; }
+    /* ── DIVIDER ──────────────────────────────────────── */
+    .divider {
+      height: 1px; background: var(--border);
+      margin: 0;
+    }
 
+    /* ── SCROLLBAR ────────────────────────────────────── */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: #2a2d36; border-radius: 99px; }
@@ -469,6 +492,7 @@
 </head>
 <body>
 
+<!-- ── NAV ──────────────────────────────────────────────── -->
 <nav>
   <div class="container">
     <div class="nav-inner">
@@ -476,11 +500,12 @@
         <div class="logo-mark">C/</div>
         <span class="logo-text">carpaccio</span>
       </a>
-      <a class="nav-cta" href="https://t.me/carpaccio_bot">Open in Telegram &rarr;</a>
+      <a class="nav-cta" href="https://t.me/carpaccio_bot">Open in Telegram →</a>
     </div>
   </div>
 </nav>
 
+<!-- ── HERO ──────────────────────────────────────────────── -->
 <section class="hero">
   <div class="container">
     <div class="hero-inner">
@@ -515,12 +540,13 @@
             <div class="stat-label">Logs kept</div>
           </div>
           <div class="stat">
-            <div class="stat-num">1<span>&times;</span></div>
+            <div class="stat-num">1<span>×</span></div>
             <div class="stat-label">Link per download</div>
           </div>
         </div>
       </div>
 
+      <!-- DEMO TERMINAL -->
       <div class="demo-wrap">
         <div class="demo-bar">
           <div class="demo-dot"></div>
@@ -536,15 +562,15 @@
           <div class="msg">
             <div class="msg-avatar bot">C/</div>
             <div class="bubble bot">
-              &#127907; <strong>Rick Astley &mdash; Never Gonna Give You Up</strong><br/>
-              <span style="color:var(--muted);font-size:11px;">youtube.com &middot; 3:33 &middot; H.264</span><br/><br/>
+              🎬 <strong>Rick Astley — Never Gonna Give You Up</strong><br/>
+              <span style="color:var(--muted);font-size:11px;">youtube.com · 3:33 · H.264</span><br/><br/>
               Select quality:<br/>
               <div class="quality-list">
-                <div class="quality-item"><span class="quality-num">1.</span> <span class="quality-tag">360p</span> MP4 &middot; ~28 MB</div>
-                <div class="quality-item"><span class="quality-num">2.</span> <span class="quality-tag">720p</span> MP4 &middot; ~95 MB</div>
-                <div class="quality-item"><span class="quality-num">3.</span> <span class="quality-tag">1080p</span> MP4 &middot; ~180 MB</div>
-                <div class="quality-item"><span class="quality-num">4.</span> <span class="quality-tag">original</span> WebM &middot; ~320 MB</div>
-                <div class="quality-item"><span class="quality-num">5.</span> <span class="quality-tag">audio</span> MP3 &middot; ~8 MB</div>
+                <div class="quality-item"><span class="quality-num">1.</span> <span class="quality-tag">360p</span> MP4 · ~28 MB</div>
+                <div class="quality-item"><span class="quality-num">2.</span> <span class="quality-tag">720p</span> MP4 · ~95 MB</div>
+                <div class="quality-item"><span class="quality-num">3.</span> <span class="quality-tag">1080p</span> MP4 · ~180 MB</div>
+                <div class="quality-item"><span class="quality-num">4.</span> <span class="quality-tag">original</span> WebM · ~320 MB</div>
+                <div class="quality-item"><span class="quality-num">5.</span> <span class="quality-tag">audio</span> MP3 · ~8 MB</div>
               </div>
             </div>
           </div>
@@ -555,7 +581,7 @@
           <div class="msg">
             <div class="msg-avatar bot">C/</div>
             <div class="bubble bot">
-              &#11088; <strong>Cost: 5 Stars</strong><br/>
+              ⭐ <strong>Cost: 5 Stars</strong><br/>
               <span style="color:var(--muted);font-size:11px;">Tap to pay and generate your link</span><br/><br/>
               <span style="background:var(--red);color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;">Pay 5 Stars</span>
             </div>
@@ -563,9 +589,9 @@
           <div class="msg">
             <div class="msg-avatar bot">C/</div>
             <div class="bubble bot">
-              &#9989; <strong>Ready.</strong><br/>
+              ✅ <strong>Ready.</strong><br/>
               <span class="code-inline">https://dl.carp.ac/f/a7x2k9m...</span><br/>
-              <span style="color:var(--muted);font-size:11px;">&#9888; One-time link &middot; Expires after download</span>
+              <span style="color:var(--muted);font-size:11px;">⚠ One-time link · Expires after download</span>
             </div>
           </div>
         </div>
@@ -576,6 +602,7 @@
 
 <div class="divider"></div>
 
+<!-- ── HOW IT WORKS ──────────────────────────────────────── -->
 <section class="section" id="how-it-works">
   <div class="container">
     <div class="section-label">How it works</div>
@@ -584,25 +611,25 @@
     <div class="steps">
       <div class="step">
         <div class="step-num">01</div>
-        <div class="step-icon">&#128279;</div>
+        <div class="step-icon">🔗</div>
         <h3>Send any URL</h3>
         <p>Paste a link from YouTube, Instagram, Twitter, TikTok, Vimeo, Reddit, or any of 1000+ supported sites directly into the chat.</p>
       </div>
       <div class="step">
         <div class="step-num">02</div>
-        <div class="step-icon">&#128203;</div>
+        <div class="step-icon">📋</div>
         <h3>Choose your quality</h3>
-        <p>The bot instantly returns all available formats &mdash; original resolution, 1080p, 720p, and audio-only. Reply with the number you want.</p>
+        <p>The bot instantly returns all available formats — original resolution, 1080p, 720p, and audio-only. Reply with the number you want.</p>
       </div>
       <div class="step">
         <div class="step-num">03</div>
-        <div class="step-icon">&#11088;</div>
+        <div class="step-icon">⭐</div>
         <h3>Pay with Stars</h3>
         <p>A Telegram Stars invoice appears. Tap to pay. Your private one-time download link is delivered within seconds.</p>
       </div>
       <div class="step">
         <div class="step-num">04</div>
-        <div class="step-icon">&#128274;</div>
+        <div class="step-icon">🔒</div>
         <h3>Download &amp; it's gone</h3>
         <p>Your link works exactly once. After the first byte is served the file is purged from our servers. No history kept.</p>
       </div>
@@ -612,36 +639,37 @@
 
 <div class="divider"></div>
 
+<!-- ── FEATURES ──────────────────────────────────────────── -->
 <section class="features-bg">
   <div class="container" style="padding:0;">
     <div class="features-grid">
       <div class="feature">
-        <div class="feature-icon">&#127760;</div>
+        <div class="feature-icon">🌐</div>
         <h3>1000+ Platforms</h3>
-        <p>Powered by yt-dlp &mdash; the most comprehensive video extraction engine. YouTube, Vimeo, Twitter, Instagram, TikTok, Reddit, Twitch VODs, and hundreds more.</p>
+        <p>Powered by yt-dlp — the most comprehensive video extraction engine. YouTube, Vimeo, Twitter, Instagram, TikTok, Reddit, Twitch VODs, and hundreds more.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#127902;</div>
+        <div class="feature-icon">🎞</div>
         <h3>All Original Formats</h3>
-        <p>Every quality the source platform offers &mdash; from 240p to 4K, plus audio-only tracks. No forced re-encoding. Original codecs and bitrate preserved.</p>
+        <p>Every quality the source platform offers — from 240p to 4K, plus audio-only tracks. No forced re-encoding. Original codecs and bitrate preserved.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#9889;</div>
+        <div class="feature-icon">⚡</div>
         <h3>Fast Delivery</h3>
         <p>Processing runs on Google Cloud infrastructure. Downloads are served from a high-bandwidth node in Northern Europe, optimized for global reach.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#128273;</div>
+        <div class="feature-icon">🔑</div>
         <h3>One-Time Links</h3>
-        <p>Each link is a signed, single-use token. The first complete download invalidates the link and triggers file deletion &mdash; not schedulable, not shareable.</p>
+        <p>Each link is a signed, single-use token. The first complete download invalidates the link and triggers file deletion — not schedulable, not shareable.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#128373;&#65039;</div>
+        <div class="feature-icon">🕵️</div>
         <h3>No User Logs</h3>
         <p>We don't store your Telegram ID, the URLs you request, or any download history. Each session is ephemeral by design, not by policy.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#11088;</div>
+        <div class="feature-icon">⭐</div>
         <h3>Telegram Stars Payments</h3>
         <p>Pay natively inside Telegram with Stars. No credit cards, no PayPal, no external checkout. Completely integrated into the conversation flow.</p>
       </div>
@@ -651,11 +679,13 @@
 
 <div class="divider"></div>
 
+<!-- ── ARCHITECTURE ──────────────────────────────────────── -->
 <section class="section">
   <div class="container">
     <div class="section-label">Infrastructure</div>
     <h2>Built for privacy &amp; resilience.</h2>
     <p class="section-intro">No single point that links you to your download. Each layer is isolated and operated independently.</p>
+
     <div class="arch-grid">
       <div class="arch-node" data-layer="User layer">
         <h4>Telegram Bot</h4>
@@ -667,7 +697,7 @@
           <li>No user data stored</li>
         </ul>
       </div>
-      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-arrow">→</div>
       <div class="arch-node" data-layer="Processing">
         <h4>GCP Cloud Run</h4>
         <ul>
@@ -678,7 +708,7 @@
           <li>Tears down after job</li>
         </ul>
       </div>
-      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-arrow">→</div>
       <div class="arch-node" data-layer="Delivery">
         <h4>Iceland Delivery Node</h4>
         <ul>
@@ -689,9 +719,9 @@
           <li>HTTPS, no logs</li>
         </ul>
       </div>
-      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-arrow">→</div>
       <div class="arch-node" data-layer="Payment">
-        <h4>Stars &rarr; XMR</h4>
+        <h4>Stars → XMR</h4>
         <ul>
           <li>Telegram Stars received</li>
           <li>Converted to Monero</li>
@@ -706,16 +736,18 @@
 
 <div class="divider"></div>
 
+<!-- ── PRICING ────────────────────────────────────────────── -->
 <section class="section section--sm" id="pricing">
   <div class="container">
     <div class="section-label">Pricing</div>
     <h2>Pay only for what you download.</h2>
     <p class="section-intro">No subscriptions. No monthly fees. Each download is a standalone transaction paid with Telegram Stars.</p>
+
     <div class="pricing-cards">
       <div class="pricing-card">
         <div class="plan-name">Standard</div>
-        <div class="plan-price"><span class="currency">&#11088;</span> 3 <span class="unit">/ download</span></div>
-        <div class="plan-desc">Up to 720p &middot; Standard queue priority</div>
+        <div class="plan-price"><span class="currency">⭐</span> 3 <span class="unit">/ download</span></div>
+        <div class="plan-desc">Up to 720p · Standard queue priority</div>
         <ul class="plan-features">
           <li>All 1000+ platforms</li>
           <li>Up to 720p quality</li>
@@ -727,8 +759,8 @@
       </div>
       <div class="pricing-card featured">
         <div class="plan-name">Full Quality</div>
-        <div class="plan-price"><span class="currency">&#11088;</span> 5 <span class="unit">/ download</span></div>
-        <div class="plan-desc">Up to original source quality &middot; Priority queue</div>
+        <div class="plan-price"><span class="currency">⭐</span> 5 <span class="unit">/ download</span></div>
+        <div class="plan-desc">Up to original source quality · Priority queue</div>
         <ul class="plan-features">
           <li>All 1000+ platforms</li>
           <li>1080p, 4K, original formats</li>
@@ -741,8 +773,8 @@
       </div>
       <div class="pricing-card">
         <div class="plan-name">Batch</div>
-        <div class="plan-price"><span class="currency">&#11088;</span> 2 <span class="unit">/ download</span></div>
-        <div class="plan-desc">10-download bundle &middot; Prepaid credit</div>
+        <div class="plan-price"><span class="currency">⭐</span> 2 <span class="unit">/ download</span></div>
+        <div class="plan-desc">10-download bundle · Prepaid credit</div>
         <ul class="plan-features">
           <li>All 1000+ platforms</li>
           <li>Up to 1080p quality</li>
@@ -758,6 +790,7 @@
 
 <div class="divider"></div>
 
+<!-- ── PRIVACY ────────────────────────────────────────────── -->
 <section class="privacy-section section">
   <div class="container">
     <div class="privacy-grid">
@@ -766,65 +799,66 @@
         <h2>We don't know who you are. By design.</h2>
         <ul class="privacy-list">
           <div class="privacy-item">
-            <div class="privacy-icon">&#129349;</div>
+            <div class="privacy-icon">🧅</div>
             <div class="privacy-item-text">
               <h4>No user identification</h4>
               <p>Your Telegram ID is only used to route the download link back to you. It is never persisted to any database or log file.</p>
             </div>
           </div>
           <div class="privacy-item">
-            <div class="privacy-icon">&#128293;</div>
+            <div class="privacy-icon">🔥</div>
             <div class="privacy-item-text">
               <h4>Ephemeral processing</h4>
               <p>Every download job runs in an isolated container that is destroyed immediately after the file is transferred to the delivery node.</p>
             </div>
           </div>
           <div class="privacy-item">
-            <div class="privacy-icon">&#127757;</div>
+            <div class="privacy-icon">🌍</div>
             <div class="privacy-item-text">
               <h4>Offshore delivery node</h4>
-              <p>Files are served from Iceland &mdash; one of the strongest privacy jurisdictions in the world, with no data retention laws.</p>
+              <p>Files are served from Iceland — one of the strongest privacy jurisdictions in the world, with no data retention laws.</p>
             </div>
           </div>
           <div class="privacy-item">
-            <div class="privacy-icon">&#129683;</div>
+            <div class="privacy-icon">🪙</div>
             <div class="privacy-item-text">
               <h4>Privacy-preserving payments</h4>
-              <p>Telegram Stars contain no personally identifiable billing data. Revenue is converted to Monero &mdash; a privacy coin with ring signatures and stealth addresses.</p>
+              <p>Telegram Stars contain no personally identifiable billing data. Revenue is converted to Monero — a privacy coin with ring signatures and stealth addresses.</p>
             </div>
           </div>
         </ul>
       </div>
+
       <div>
         <div class="privacy-diagram">
           <div style="color:var(--muted);font-size:11px;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px;">Data flow</div>
           <div class="pd-row" style="margin-bottom:10px;">
             <div class="pd-node blue">Your Telegram</div>
-            <div class="pd-arrow">&rarr;</div>
+            <div class="pd-arrow">→</div>
             <div class="pd-node red">Bot API</div>
             <div class="pd-label">TLS only</div>
           </div>
           <div class="pd-row" style="margin-bottom:10px;">
             <div class="pd-node red">Bot API</div>
-            <div class="pd-arrow">&rarr;</div>
+            <div class="pd-arrow">→</div>
             <div class="pd-node">GCP Job</div>
             <div class="pd-label">ephemeral</div>
           </div>
           <div class="pd-row" style="margin-bottom:10px;">
             <div class="pd-node">GCP Job</div>
-            <div class="pd-arrow">&rarr;</div>
+            <div class="pd-arrow">→</div>
             <div class="pd-node green">Iceland VPS</div>
             <div class="pd-label">SCP / anon</div>
           </div>
           <div class="pd-row" style="margin-bottom:10px;">
             <div class="pd-node green">Iceland VPS</div>
-            <div class="pd-arrow">&rarr;</div>
+            <div class="pd-arrow">→</div>
             <div class="pd-node blue">Your device</div>
-            <div class="pd-label">1&times; token</div>
+            <div class="pd-label">1× token</div>
           </div>
           <div class="pd-row" style="margin-bottom:20px;">
             <div class="pd-node green">Iceland VPS</div>
-            <div class="pd-arrow">&rarr;</div>
+            <div class="pd-arrow">→</div>
             <div class="pd-node" style="border-color:#e85d50;color:#e85d50;">File deleted</div>
             <div class="pd-label">instant</div>
           </div>
@@ -832,16 +866,17 @@
             <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Payment flow</div>
             <div class="pd-row" style="margin-bottom:8px;">
               <div class="pd-node blue">Telegram Stars</div>
-              <div class="pd-arrow">&rarr;</div>
+              <div class="pd-arrow">→</div>
               <div class="pd-node" style="border-color:#ff6600;color:#ff6600;">Monero (XMR)</div>
             </div>
             <div class="pd-row">
               <div class="pd-node" style="border-color:#ff6600;color:#ff6600;">Monero (XMR)</div>
-              <div class="pd-arrow">&rarr;</div>
+              <div class="pd-arrow">→</div>
               <div class="pd-node green">Non-custodial wallet</div>
             </div>
           </div>
         </div>
+
         <div style="margin-top:24px;">
           <div class="section-label" style="margin-bottom:12px;">Tech stack</div>
           <div class="stack-grid">
@@ -862,6 +897,7 @@
 
 <div class="divider"></div>
 
+<!-- ── FAQ ────────────────────────────────────────────────── -->
 <section class="section section--sm">
   <div class="container">
     <div class="section-label">FAQ</div>
@@ -873,7 +909,7 @@
           <span class="toggle">+</span>
         </div>
         <div class="faq-a">
-          Anything supported by yt-dlp &mdash; which covers YouTube, Vimeo, Twitter/X, Instagram, TikTok, Reddit, Twitch (VODs and clips), SoundCloud, Dailymotion, and over a thousand others. Embed-based players (JWPlayer, DoodStream, Redgifs, etc.) are also handled through our custom extractor.
+          Anything supported by yt-dlp — which covers YouTube, Vimeo, Twitter/X, Instagram, TikTok, Reddit, Twitch (VODs and clips), SoundCloud, Dailymotion, and over a thousand others. If yt-dlp can handle it, so can we. Embed-based players (JWPlayer, DoodStream, Redgifs, etc.) are also handled through our custom extractor.
         </div>
       </div>
       <div class="faq-item">
@@ -882,7 +918,7 @@
           <span class="toggle">+</span>
         </div>
         <div class="faq-a">
-          Most links are ready in 10&ndash;45 seconds. Longer videos or rare high-bitrate formats may take up to 2 minutes. You'll receive a Telegram notification the moment your link is ready.
+          Most links are ready in 10–45 seconds. Longer videos or rare high-bitrate formats may take up to 2 minutes. You'll receive a Telegram notification the moment your link is ready — no need to wait in the chat.
         </div>
       </div>
       <div class="faq-item">
@@ -891,7 +927,7 @@
           <span class="toggle">+</span>
         </div>
         <div class="faq-a">
-          Technically yes, but it only works once. The first device that opens the link downloads the file; immediately after, the token is invalidated and the file is deleted.
+          Technically yes, but it only works once. The first device that opens the link downloads the file; immediately after, the token is invalidated and the file is deleted. There's no way to regenerate the same link.
         </div>
       </div>
       <div class="faq-item">
@@ -900,7 +936,7 @@
           <span class="toggle">+</span>
         </div>
         <div class="faq-a">
-          If the bot cannot extract a working download URL from your link within the processing window, the Stars charge is cancelled. You are never charged for a failed job.
+          If the bot cannot extract a working download URL from your link within the processing window, the Stars charge is cancelled before it processes. You are never charged for a failed job. The Stars invoice is only finalized after a valid link is generated.
         </div>
       </div>
       <div class="faq-item">
@@ -909,7 +945,7 @@
           <span class="toggle">+</span>
         </div>
         <div class="faq-a">
-          Standard plan: up to 500 MB per download. Full Quality plan: up to 4 GB. Audio-only downloads have no practical size limit.
+          Standard plan: up to 500 MB per download. Full Quality plan: up to 4 GB. Files larger than 4 GB are not supported at this time. Audio-only downloads have no practical size limit.
         </div>
       </div>
       <div class="faq-item">
@@ -918,7 +954,7 @@
           <span class="toggle">+</span>
         </div>
         <div class="faq-a">
-          No. The URL is passed directly to the extraction job and discarded after the job completes. There is no database record of URL submissions, download requests, or user-to-link associations.
+          No. The URL is passed directly to the extraction job and discarded after the job completes. There is no database record of URL submissions, download requests, or user-to-link associations. The only transient state is the job queue entry, which is purged after completion whether successful or not.
         </div>
       </div>
     </div>
@@ -927,9 +963,10 @@
 
 <div class="divider"></div>
 
+<!-- ── CTA FOOTER ─────────────────────────────────────────── -->
 <section class="section section--sm" style="text-align:center;">
   <div class="container">
-    <div style="font-size:48px;margin-bottom:16px;">&#127907;</div>
+    <div style="font-size:48px;margin-bottom:16px;">🎬</div>
     <h2 style="margin-bottom:12px;">Ready to download?</h2>
     <p style="color:var(--muted);font-size:16px;margin-bottom:32px;">Open Telegram and send your first link. No sign-up required.</p>
     <a class="btn-primary" href="https://t.me/carpaccio_bot" style="display:inline-flex;">
@@ -939,12 +976,13 @@
   </div>
 </section>
 
+<!-- ── FOOTER ─────────────────────────────────────────────── -->
 <footer>
   <div class="container">
     <div class="footer-inner">
       <div class="footer-brand">
         <div class="logo-mark" style="width:24px;height:24px;font-size:12px;">C/</div>
-        <span class="footer-copy">carpaccio &middot; anonymous video delivery</span>
+        <span class="footer-copy">carpaccio · anonymous video delivery</span>
       </div>
       <div class="footer-links">
         <a href="#how-it-works">How it works</a>
