@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>zero_hero — what was built · Carpaccio</title>
+  <meta name="description" content="Infrastructure implementation log for Carpaccio. Three components, 16 files, zero GCP resources deployed." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #07080a;
+      --surface:   #0f1115;
+      --surface2:  #161820;
+      --border:    #1e2028;
+      --red:       #c0392b;
+      --red-dim:   #8a1c14;
+      --red-glow:  rgba(192, 57, 43, 0.18);
+      --gold:      #c9a84c;
+      --text:      #dde1e7;
+      --muted:     #6b7280;
+      --mono:      'Courier New', Courier, monospace;
+      --sans:      -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.65;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: .5;
+    }
+
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+    .section { padding: 100px 0; }
+    .section--sm { padding: 64px 0; }
+
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(7, 8, 10, 0.88);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: var(--text);
+    }
+    .logo-mark {
+      width: 30px; height: 30px;
+      background: var(--red);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 900; color: #fff;
+      font-family: var(--mono);
+      flex-shrink: 0;
+    }
+    .logo-text { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+    .nav-cta {
+      background: var(--red);
+      color: #fff; font-size: 13px; font-weight: 600;
+      padding: 8px 18px; border-radius: 6px;
+      text-decoration: none;
+      transition: background .2s;
+    }
+    .nav-cta:hover { background: #a93226; }
+
+    .hero {
+      min-height: 72vh;
+      display: flex; align-items: center;
+      padding: 80px 0;
+      position: relative;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 800px; height: 500px;
+      background: radial-gradient(ellipse at center, var(--red-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-tag {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: rgba(192, 57, 43, .12);
+      border: 1px solid rgba(192, 57, 43, .3);
+      border-radius: 99px; padding: 5px 14px;
+      font-size: 12px; color: #e07070; font-weight: 500;
+      letter-spacing: .4px; text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+    .hero-tag span.dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--red);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: .3; }
+    }
+    h1 {
+      font-size: clamp(36px, 6vw, 72px);
+      font-weight: 800;
+      line-height: 1.08;
+      letter-spacing: -1.5px;
+      margin-bottom: 24px;
+    }
+    h1 em { font-style: normal; color: var(--red); }
+    .hero-sub {
+      font-size: clamp(16px, 2vw, 19px);
+      color: var(--muted);
+      max-width: 620px;
+      margin-bottom: 40px;
+      line-height: 1.7;
+    }
+
+    .hero-stats {
+      margin-top: 56px;
+      display: flex; gap: 40px; flex-wrap: wrap;
+    }
+    .stat-num {
+      font-size: 32px; font-weight: 800;
+      color: var(--text); letter-spacing: -1px;
+    }
+    .stat-num span { color: var(--red); }
+    .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-top: 2px; }
+
+    .section-label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--red); font-weight: 700; margin-bottom: 14px;
+    }
+    h2 {
+      font-size: clamp(26px, 4vw, 42px);
+      font-weight: 800; letter-spacing: -.8px;
+      margin-bottom: 16px;
+    }
+    .section-intro {
+      font-size: 17px; color: var(--muted);
+      max-width: 560px; margin-bottom: 60px;
+    }
+
+    /* STEP CARDS */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 24px;
+    }
+    .step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+      position: relative;
+      transition: border-color .2s;
+    }
+    .step:hover { border-color: var(--red-dim); }
+    .step--pending {
+      border-color: rgba(192,57,43,.35);
+      background: rgba(192,57,43,.04);
+    }
+    .step--pending:hover { border-color: rgba(192,57,43,.6); }
+    .step-num {
+      font-family: var(--mono);
+      font-size: 48px; font-weight: 900;
+      color: var(--border);
+      line-height: 1;
+      margin-bottom: 16px;
+      user-select: none;
+    }
+    .step-icon { margin-bottom: 12px; color: var(--text); }
+    .step-icon--warn { color: var(--red); }
+    .step h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+    .step p { font-size: 14px; color: var(--muted); line-height: 1.65; }
+    .step .step-tag {
+      display: inline-block;
+      margin-top: 12px;
+      font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      text-transform: uppercase;
+      background: var(--red-dim); color: #e07070;
+      padding: 3px 8px; border-radius: 4px;
+    }
+
+    /* FEATURE GRID (components) */
+    .features-bg {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2px;
+    }
+    .feature {
+      padding: 40px 36px;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      transition: background .2s;
+      position: relative;
+    }
+    .feature:hover { background: var(--surface2); }
+    .feature::before {
+      content: attr(data-layer);
+      position: absolute; top: 0; left: 36px;
+      background: var(--red-dim);
+      color: #e07070; font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 1px;
+      padding: 3px 8px; border-radius: 0 0 5px 5px;
+    }
+    .feature-icon {
+      width: 46px; height: 46px;
+      background: var(--red-glow);
+      border: 1px solid rgba(192,57,43,.25);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--red);
+      margin-bottom: 18px;
+      margin-top: 20px;
+    }
+    .feature h3 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+    .feature .feature-path { font-family: var(--mono); font-size: 12px; color: var(--gold); margin-bottom: 14px; }
+    .feature p { font-size: 13.5px; color: var(--muted); line-height: 1.65; margin-bottom: 16px; }
+    .feature-files {
+      list-style: none;
+      margin-top: 4px;
+    }
+    .feature-files li {
+      font-size: 12px; color: var(--muted);
+      padding: 3px 0;
+      font-family: var(--mono);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .feature-files li::before {
+      content: '';
+      width: 4px; height: 4px; border-radius: 50%;
+      background: var(--red-dim);
+      flex-shrink: 0;
+    }
+
+    /* ARCH-NODE (legacy, kept for possible reuse) */
+    .arch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 48px;
+    }
+    .arch-node {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 20px;
+      position: relative;
+    }
+    .arch-node::before {
+      content: attr(data-layer);
+      position: absolute; top: -1px; left: 20px;
+      background: var(--red-dim);
+      color: #e07070; font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 1px;
+      padding: 3px 8px; border-radius: 0 0 5px 5px;
+    }
+    .arch-node h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; margin-top: 12px; }
+    .arch-node ul { list-style: none; }
+    .arch-node li { font-size: 12.5px; color: var(--muted); padding: 3px 0; }
+    .arch-node li::before { content: '›  '; color: var(--red); }
+
+    /* PRICING TABLE */
+    .pricing-table-wrap { margin-top: 48px; }
+    .pricing-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 14px;
+    }
+    .pricing-table thead th {
+      text-align: left; padding: 10px 16px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+      color: var(--muted); border-bottom: 1px solid var(--border);
+    }
+    .pricing-table tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
+    .pricing-table tbody tr:hover { background: var(--surface2); }
+    .pricing-table tbody tr.row-bot td:first-child { color: #70aaee; }
+    .pricing-table tbody tr.row-runner td:first-child { color: #e07070; }
+    .pricing-table tbody tr.row-delivery td:first-child { color: #5ac85a; }
+    .pricing-table td { padding: 12px 16px; color: var(--text); vertical-align: middle; }
+    .pricing-table td:first-child { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+    .comp-badge {
+      display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 1px;
+      padding: 2px 8px; border-radius: 99px;
+      text-transform: uppercase; vertical-align: middle;
+    }
+    .comp-badge--bot { background: rgba(112,170,238,.15); color: #70aaee; }
+    .comp-badge--runner { background: rgba(192,57,43,.15); color: #e07070; }
+    .comp-badge--delivery { background: rgba(90,200,90,.15); color: #5ac85a; }
+
+    /* PRIVACY DIAGRAM (env vars block) */
+    .privacy-section { background: var(--surface); border-top: 1px solid var(--border); }
+    .privacy-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: start;
+    }
+    @media (max-width: 700px) { .privacy-grid { grid-template-columns: 1fr; } }
+    .privacy-list { list-style: none; margin-top: 32px; }
+    .privacy-item {
+      display: flex; gap: 14px; align-items: flex-start;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .privacy-item:last-child { border-bottom: none; }
+    .privacy-icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: var(--red-glow);
+      border: 1px solid rgba(192,57,43,.2);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--red);
+      flex-shrink: 0;
+    }
+    .privacy-icon--green {
+      background: rgba(90,200,90,.1);
+      border-color: rgba(90,200,90,.2);
+      color: #5ac85a;
+    }
+    .privacy-icon--clock {
+      background: rgba(201,168,76,.08);
+      border-color: rgba(201,168,76,.2);
+      color: var(--gold);
+    }
+    .privacy-item-text h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .privacy-item-text p { font-size: 13px; color: var(--muted); }
+    .privacy-status {
+      font-size: 10px; font-weight: 700; letter-spacing: .8px;
+      text-transform: uppercase; margin-top: 4px;
+    }
+    .privacy-status--impl { color: #5ac85a; }
+    .privacy-status--pend { color: var(--gold); }
+
+    .privacy-diagram {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 28px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 2;
+    }
+    .pd-section-label {
+      font-size: 10px; color: var(--red);
+      text-transform: uppercase; letter-spacing: 1.2px;
+      margin-bottom: 10px; margin-top: 20px;
+      font-weight: 700;
+    }
+    .pd-section-label:first-child { margin-top: 0; }
+    .pd-var { display: flex; gap: 0; padding: 2px 0; }
+    .pd-var-name { color: var(--gold); min-width: 260px; }
+    .pd-var-desc { color: var(--muted); }
+    .pd-divider { height: 1px; background: var(--border); margin: 14px 0; }
+
+    /* FAQ */
+    .faq-list { margin-top: 40px; }
+    .faq-item {
+      border-bottom: 1px solid var(--border);
+      padding: 20px 0;
+    }
+    .faq-q {
+      font-size: 15px; font-weight: 700;
+      cursor: pointer;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 16px;
+    }
+    .faq-q .toggle { color: var(--red); font-size: 20px; flex-shrink: 0; transition: transform .2s; }
+    .faq-item.open .faq-q .toggle { transform: rotate(45deg); }
+    .faq-a {
+      font-size: 14px; color: var(--muted);
+      line-height: 1.7; max-height: 0; overflow: hidden;
+      transition: max-height .35s ease, padding .35s ease;
+    }
+    .faq-item.open .faq-a { max-height: 400px; padding-top: 12px; }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+    }
+    .footer-inner {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 16px;
+    }
+    .footer-brand { display: flex; align-items: center; gap: 8px; }
+    .footer-copy { font-size: 12px; color: var(--muted); }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { font-size: 12px; color: var(--muted); text-decoration: none; transition: color .15s; }
+    .footer-links a:hover { color: var(--text); }
+    .footer-note { font-size: 11px; color: #3a3d47; margin-top: 20px; text-align: center; }
+
+    .divider { height: 1px; background: var(--border); margin: 0; }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: #2a2d36; border-radius: 99px; }
+
+    code {
+      font-family: var(--mono);
+      font-size: .9em;
+      color: var(--gold);
+      background: rgba(201,168,76,.08);
+      padding: 1px 5px; border-radius: 4px;
+    }
+
+    @media (max-width: 800px) {
+      .privacy-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container">
+    <div class="nav-inner">
+      <a class="logo" href="index.html">
+        <div class="logo-mark">C/</div>
+        <span class="logo-text">carpaccio</span>
+      </a>
+      <a class="nav-cta" href="index.html">Back to product &rarr;</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-tag">
+      <span class="dot"></span>
+      Implementation complete &mdash; awaiting deploy authorization
+    </div>
+    <h1>Three components. <em>Zero</em> deploy.</h1>
+    <p class="hero-sub">
+      All application code written and ready. GCP Cloud Run deploy and VPS setup pending operator authorization.
+    </p>
+    <div class="hero-stats">
+      <div class="stat">
+        <div class="stat-num">3</div>
+        <div class="stat-label">Components</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">16</div>
+        <div class="stat-label">Files</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">0</div>
+        <div class="stat-label">Databases</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num"><span>0</span></div>
+        <div class="stat-label">GCP resources deployed</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ARCHITECTURE DECISIONS -->
+<section class="section" id="decisions">
+  <div class="container">
+    <div class="section-label">Architecture decisions</div>
+    <h2>Six choices. Each intentional.</h2>
+    <p class="section-intro">Design rationale recorded at implementation time.</p>
+    <div class="steps">
+
+      <div class="step">
+        <div class="step-num">01</div>
+        <div class="step-icon">
+          <!-- server/location icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="20" height="8" x="2" y="2" rx="2" ry="2"/>
+            <rect width="20" height="8" x="2" y="14" rx="2" ry="2"/>
+            <line x1="6" x2="6.01" y1="6" y2="6"/>
+            <line x1="6" x2="6.01" y1="18" y2="18"/>
+          </svg>
+        </div>
+        <h3>Bot on Iceland VPS, not GCP</h3>
+        <p>Zero Google account linkage for the bot process. IP of outbound Telegram requests is the anon VPS, not GCP. Decouples Telegram identity from cloud billing identity.</p>
+      </div>
+
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-icon">
+          <!-- key icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="7.5" cy="15.5" r="5.5"/>
+            <path d="m21 2-9.6 9.6"/>
+            <path d="m15.5 7.5 3 3L22 7l-3-3"/>
+          </svg>
+        </div>
+        <h3>HMAC shared secret via env var</h3>
+        <p>All bot-to-runner and runner-to-delivery auth uses a shared HMAC secret. No GCP Secret Manager — that would tie secrets to a Google account. Secret lives only as env vars on VPS and Cloud Run.</p>
+      </div>
+
+      <div class="step">
+        <div class="step-num">03</div>
+        <div class="step-icon">
+          <!-- invoice after download icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <h3>Payment after download</h3>
+        <p>Job runs first. Stars invoice is issued only when the file is ready and a link exists. If the job fails, no Stars are charged. User contacts support for any edge-case refund.</p>
+      </div>
+
+      <div class="step">
+        <div class="step-num">04</div>
+        <div class="step-icon">
+          <!-- keyboard/buttons icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="20" height="16" x="2" y="4" rx="2"/>
+            <path d="M6 8h.001"/>
+            <path d="M10 8h.001"/>
+            <path d="M14 8h.001"/>
+            <path d="M18 8h.001"/>
+            <path d="M6 12h.001"/>
+            <path d="M10 12h.001"/>
+            <path d="M14 12h.001"/>
+            <path d="M18 12h.001"/>
+            <path d="M8 16h8"/>
+          </svg>
+        </div>
+        <h3>Inline keyboard for quality</h3>
+        <p>Buttons instead of typed numbers. UX: tap to select format, no FSM ambiguity from free-text replies. Eliminates the class of bugs where a digit reply is misrouted to the wrong state.</p>
+      </div>
+
+      <div class="step">
+        <div class="step-num">05</div>
+        <div class="step-icon">
+          <!-- async/clock icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <h3>Synchronous Cloud Run request</h3>
+        <p>Runner processes within the HTTP request (up to 30 min). Bot fires the request async via <code>create_task</code>, no await. Cloud Run max timeout is 3600s, keeping the architecture simple with no job queue.</p>
+      </div>
+
+      <div class="step">
+        <div class="step-num">06</div>
+        <div class="step-icon">
+          <!-- stream/delete icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6"/>
+            <path d="M14 11v6"/>
+            <path d="M9 6V4h6v2"/>
+          </svg>
+        </div>
+        <h3>Streaming delete on serve</h3>
+        <p>Delivery server uses an async generator that deletes the file after the last byte is yielded. Token is removed from memory on first access, before streaming begins. One-time guarantee is enforced at two layers.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- COMPONENTS BUILT -->
+<section class="features-bg" id="components">
+  <div class="container" style="padding:0;">
+    <div style="padding: 64px 24px 0; position: relative; z-index: 1;">
+      <div class="section-label">Components built</div>
+      <h2>Three services. One flow.</h2>
+      <p class="section-intro" style="margin-bottom: 0;">Each component is self-contained with its own Dockerfile, requirements, and env vars.</p>
+    </div>
+    <div class="features-grid" style="margin-top: 2px;">
+
+      <div class="feature" data-layer="VPS Iceland">
+        <div class="feature-icon">
+          <!-- telegram/bot icon -->
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.247l-1.97 9.289c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.932z"/>
+          </svg>
+        </div>
+        <h3>Bot</h3>
+        <div class="feature-path">bot/</div>
+        <p>aiogram 3, webhook mode, MemoryStorage FSM, aiohttp web server hosting <code>/telegram</code> + <code>/callback</code> endpoints. Manages quality selection via inline keyboard and issues Stars invoice only after job completion.</p>
+        <ul class="feature-files">
+          <li>main.py</li>
+          <li>states.py</li>
+          <li>pricing.py</li>
+          <li>probe.py</li>
+          <li>requirements.txt</li>
+          <li>Dockerfile</li>
+          <li>.env.example</li>
+        </ul>
+      </div>
+
+      <div class="feature" data-layer="GCP Cloud Run">
+        <div class="feature-icon">
+          <!-- cloud/processing icon -->
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>
+          </svg>
+        </div>
+        <h3>Runner</h3>
+        <div class="feature-path">runner/</div>
+        <p>FastAPI, yt-dlp + ffmpeg download, paramiko SFTP upload to VPS, HMAC-signed callback to bot on completion. Runs entirely within the HTTP request lifecycle — no async queue, no persistent state.</p>
+        <ul class="feature-files">
+          <li>main.py</li>
+          <li>requirements.txt</li>
+          <li>Dockerfile</li>
+          <li>.env.example</li>
+        </ul>
+      </div>
+
+      <div class="feature" data-layer="VPS Iceland">
+        <div class="feature-icon">
+          <!-- download/delivery icon -->
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" x2="12" y1="15" y2="3"/>
+          </svg>
+        </div>
+        <h3>Delivery</h3>
+        <div class="feature-path">delivery/</div>
+        <p>FastAPI streaming response with post-stream delete, 1-hour token expiry fallback, nginx with <code>access_log off</code>. Token is popped from the in-memory dict on the first request, before any bytes are sent.</p>
+        <ul class="feature-files">
+          <li>server.py</li>
+          <li>nginx.conf</li>
+          <li>requirements.txt</li>
+          <li>Dockerfile</li>
+          <li>.env.example</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- FILE INVENTORY -->
+<section class="section section--sm" id="files">
+  <div class="container">
+    <div class="section-label">File inventory</div>
+    <h2>16 files. All accounted for.</h2>
+    <p class="section-intro">Every file created during implementation, with its component and purpose.</p>
+    <div class="pricing-table-wrap">
+      <table class="pricing-table">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Component</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="row-bot">
+            <td>bot/main.py</td>
+            <td><span class="comp-badge comp-badge--bot">Bot</span></td>
+            <td>Bot entrypoint, FSM handlers, webhook + callback server</td>
+          </tr>
+          <tr class="row-bot">
+            <td>bot/states.py</td>
+            <td><span class="comp-badge comp-badge--bot">Bot</span></td>
+            <td>FSM state definitions (DownloadFlow)</td>
+          </tr>
+          <tr class="row-bot">
+            <td>bot/pricing.py</td>
+            <td><span class="comp-badge comp-badge--bot">Bot</span></td>
+            <td>Stars tier calculation from filesize</td>
+          </tr>
+          <tr class="row-bot">
+            <td>bot/probe.py</td>
+            <td><span class="comp-badge comp-badge--bot">Bot</span></td>
+            <td>Async yt-dlp --dump-json wrapper</td>
+          </tr>
+          <tr class="row-bot">
+            <td>bot/Dockerfile</td>
+            <td><span class="comp-badge comp-badge--bot">Bot</span></td>
+            <td>Python 3.12 + ffmpeg + yt-dlp image</td>
+          </tr>
+          <tr class="row-bot">
+            <td>bot/requirements.txt</td>
+            <td><span class="comp-badge comp-badge--bot">Bot</span></td>
+            <td>aiogram 3.13, aiohttp 3.9</td>
+          </tr>
+          <tr class="row-bot">
+            <td>bot/.env.example</td>
+            <td><span class="comp-badge comp-badge--bot">Bot</span></td>
+            <td>Required env var reference</td>
+          </tr>
+          <tr class="row-runner">
+            <td>runner/main.py</td>
+            <td><span class="comp-badge comp-badge--runner">Runner</span></td>
+            <td>FastAPI /run endpoint, download + upload + callback</td>
+          </tr>
+          <tr class="row-runner">
+            <td>runner/Dockerfile</td>
+            <td><span class="comp-badge comp-badge--runner">Runner</span></td>
+            <td>Python 3.12 + ffmpeg + yt-dlp image</td>
+          </tr>
+          <tr class="row-runner">
+            <td>runner/requirements.txt</td>
+            <td><span class="comp-badge comp-badge--runner">Runner</span></td>
+            <td>fastapi, uvicorn, httpx, paramiko</td>
+          </tr>
+          <tr class="row-runner">
+            <td>runner/.env.example</td>
+            <td><span class="comp-badge comp-badge--runner">Runner</span></td>
+            <td>Required env var reference</td>
+          </tr>
+          <tr class="row-delivery">
+            <td>delivery/server.py</td>
+            <td><span class="comp-badge comp-badge--delivery">Delivery</span></td>
+            <td>One-time token server (FastAPI)</td>
+          </tr>
+          <tr class="row-delivery">
+            <td>delivery/nginx.conf</td>
+            <td><span class="comp-badge comp-badge--delivery">Delivery</span></td>
+            <td>TLS termination, zero access_log, port routing</td>
+          </tr>
+          <tr class="row-delivery">
+            <td>delivery/Dockerfile</td>
+            <td><span class="comp-badge comp-badge--delivery">Delivery</span></td>
+            <td>Python 3.12-slim image</td>
+          </tr>
+          <tr class="row-delivery">
+            <td>delivery/requirements.txt</td>
+            <td><span class="comp-badge comp-badge--delivery">Delivery</span></td>
+            <td>fastapi, uvicorn, aiofiles</td>
+          </tr>
+          <tr class="row-delivery">
+            <td>delivery/.env.example</td>
+            <td><span class="comp-badge comp-badge--delivery">Delivery</span></td>
+            <td>Required env var reference</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- PENDING -->
+<section class="section section--sm" id="pending">
+  <div class="container">
+    <div class="section-label">Pending &mdash; not deployed</div>
+    <h2>Six steps to live.</h2>
+    <p class="section-intro">All code is ready. These are operator actions required before first run.</p>
+    <div class="steps">
+
+      <div class="step step--pending">
+        <div class="step-num">P1</div>
+        <div class="step-icon step-icon--warn">
+          <!-- cloud upload icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 16 12 12 8 16"/>
+            <line x1="12" x2="12" y1="12" y2="21"/>
+            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+          </svg>
+        </div>
+        <h3>GCP Cloud Run service</h3>
+        <p>Deploy runner image, set env vars, configure timeout 3600s, set min-instances=0. Requires Google Cloud account and billing enabled.</p>
+        <span class="step-tag">Operator action</span>
+      </div>
+
+      <div class="step step--pending">
+        <div class="step-num">P2</div>
+        <div class="step-icon step-icon--warn">
+          <!-- globe/server icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" x2="22" y1="12" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+        </div>
+        <h3>VPS setup</h3>
+        <p>Provision Iceland VPS (1984.is or OrangeWebsite), pay with Monero, install nginx, Python 3.12, certbot. Copy deployment files and start services.</p>
+        <span class="step-tag">Operator action</span>
+      </div>
+
+      <div class="step step--pending">
+        <div class="step-num">P3</div>
+        <div class="step-icon step-icon--warn">
+          <!-- lock/tls icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h3>Domain + TLS</h3>
+        <p>Point domain to VPS IP, run certbot, validate Let's Encrypt certificate. Update <code>BOT_DOMAIN</code> and <code>DELIVERY_DOMAIN</code> env vars across all components.</p>
+        <span class="step-tag">Operator action</span>
+      </div>
+
+      <div class="step step--pending">
+        <div class="step-num">P4</div>
+        <div class="step-icon step-icon--warn">
+          <!-- telegram icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.198 2.433a2.242 2.242 0 0 0-1.022.215l-16.5 6.75a2.25 2.25 0 0 0 .126 4.23l3.924 1.227 1.957 6.012a.75.75 0 0 0 1.184.33l2.978-2.528 4.073 3.009a2.25 2.25 0 0 0 3.502-1.31l3.093-14.297a2.25 2.25 0 0 0-3.315-2.638z"/>
+          </svg>
+        </div>
+        <h3>Telegram bot</h3>
+        <p>Create via @BotFather, enable Stars payments, set webhook to <code>https://vps-domain/telegram</code>. Copy bot token into <code>BOT_TOKEN</code> env var.</p>
+        <span class="step-tag">Operator action</span>
+      </div>
+
+      <div class="step step--pending">
+        <div class="step-num">P5</div>
+        <div class="step-icon step-icon--warn">
+          <!-- fingerprint/key icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4"/>
+            <path d="M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2"/>
+            <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/>
+            <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/>
+            <path d="M8.65 22c.21-.66.45-1.32.57-2"/>
+            <path d="M14 13.12c0 2.38 0 6.38-1 8.88"/>
+            <path d="M2 16h.01"/>
+            <path d="M21.8 16c.2-2 .131-5.354 0-6"/>
+            <path d="M9 6.8a6 6 0 0 1 9 5.2v2"/>
+          </svg>
+        </div>
+        <h3>SFTP key pair</h3>
+        <p>Generate RSA key pair, copy public key to VPS <code>authorized_keys</code>, paste private key into runner <code>SFTP_PRIVATE_KEY</code> env var. Test upload path before deploying runner.</p>
+        <span class="step-tag">Operator action</span>
+      </div>
+
+      <div class="step step--pending">
+        <div class="step-num">P6</div>
+        <div class="step-icon step-icon--warn">
+          <!-- random/hash icon -->
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" x2="20" y1="9" y2="9"/>
+            <line x1="4" x2="20" y1="15" y2="15"/>
+            <line x1="10" x2="8" y1="3" y2="21"/>
+            <line x1="16" x2="14" y1="3" y2="21"/>
+          </svg>
+        </div>
+        <h3>Secrets generation</h3>
+        <p>Generate three secrets with <code>openssl rand -hex 32</code> for <code>BOT_RUNNER_SECRET</code>, <code>RUNNER_DELIVERY_SECRET</code>, and <code>DELIVERY_TOKEN_SALT</code>. Never reuse across environments.</p>
+        <span class="step-tag">Operator action</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ENV VAR REFERENCE -->
+<section class="section section--sm" id="env">
+  <div class="container">
+    <div class="section-label">Configuration reference</div>
+    <h2>All environment variables.</h2>
+    <p class="section-intro">Grouped by component. Each .env.example contains these keys with placeholder values.</p>
+
+    <div class="privacy-diagram" style="margin-top: 48px; overflow-x: auto;">
+
+      <div class="pd-section-label">Bot (bot/.env)</div>
+      <div class="pd-var"><span class="pd-var-name">BOT_TOKEN</span><span class="pd-var-desc">Telegram bot token from @BotFather</span></div>
+      <div class="pd-var"><span class="pd-var-name">BOT_DOMAIN</span><span class="pd-var-desc">Public HTTPS domain of the VPS (webhook host)</span></div>
+      <div class="pd-var"><span class="pd-var-name">BOT_RUNNER_SECRET</span><span class="pd-var-desc">HMAC secret for bot-to-runner auth (hex 32)</span></div>
+      <div class="pd-var"><span class="pd-var-name">RUNNER_URL</span><span class="pd-var-desc">Full HTTPS URL of the Cloud Run /run endpoint</span></div>
+      <div class="pd-var"><span class="pd-var-name">DELIVERY_DOMAIN</span><span class="pd-var-desc">Public HTTPS domain of the delivery VPS</span></div>
+
+      <div class="pd-divider"></div>
+
+      <div class="pd-section-label">Runner (runner/.env)</div>
+      <div class="pd-var"><span class="pd-var-name">BOT_RUNNER_SECRET</span><span class="pd-var-desc">HMAC secret for validating requests from bot</span></div>
+      <div class="pd-var"><span class="pd-var-name">RUNNER_DELIVERY_SECRET</span><span class="pd-var-desc">HMAC secret for runner-to-delivery auth (hex 32)</span></div>
+      <div class="pd-var"><span class="pd-var-name">SFTP_HOST</span><span class="pd-var-desc">VPS IP address for SFTP upload target</span></div>
+      <div class="pd-var"><span class="pd-var-name">SFTP_USER</span><span class="pd-var-desc">VPS SSH user for SFTP upload</span></div>
+      <div class="pd-var"><span class="pd-var-name">SFTP_PRIVATE_KEY</span><span class="pd-var-desc">RSA private key (PEM) for SFTP auth</span></div>
+      <div class="pd-var"><span class="pd-var-name">SFTP_UPLOAD_PATH</span><span class="pd-var-desc">Remote directory to place downloaded files</span></div>
+      <div class="pd-var"><span class="pd-var-name">BOT_CALLBACK_URL</span><span class="pd-var-desc">Bot /callback endpoint URL for job completion</span></div>
+      <div class="pd-var"><span class="pd-var-name">DELIVERY_REGISTER_URL</span><span class="pd-var-desc">Delivery server /register endpoint URL</span></div>
+
+      <div class="pd-divider"></div>
+
+      <div class="pd-section-label">Delivery (delivery/.env)</div>
+      <div class="pd-var"><span class="pd-var-name">RUNNER_DELIVERY_SECRET</span><span class="pd-var-desc">HMAC secret for validating runner registration calls</span></div>
+      <div class="pd-var"><span class="pd-var-name">DELIVERY_TOKEN_SALT</span><span class="pd-var-desc">Salt for one-time token derivation (hex 32)</span></div>
+      <div class="pd-var"><span class="pd-var-name">FILES_DIR</span><span class="pd-var-desc">Local directory where SFTP-uploaded files land</span></div>
+      <div class="pd-var"><span class="pd-var-name">TOKEN_TTL_SECONDS</span><span class="pd-var-desc">Max age of undownloaded token before expiry (3600)</span></div>
+
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- PRIVACY INVARIANTS -->
+<section class="privacy-section section" id="privacy">
+  <div class="container">
+    <div class="section-label">Privacy invariants</div>
+    <h2>What was built vs. what is deploy-time.</h2>
+    <ul class="privacy-list" style="margin-top: 40px;">
+
+      <div class="privacy-item">
+        <div class="privacy-icon privacy-icon--green">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class="privacy-item-text">
+          <h4>Zero URL logs</h4>
+          <p>yt-dlp invoked with <code>--quiet</code>, no payload written to stdout or log files. URL never persisted beyond in-memory variable lifetime.</p>
+          <div class="privacy-status privacy-status--impl">Implemented in code</div>
+        </div>
+      </div>
+
+      <div class="privacy-item">
+        <div class="privacy-icon privacy-icon--green">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class="privacy-item-text">
+          <h4>Zero Telegram ID persistence</h4>
+          <p>Only in-memory Python dicts hold the mapping from chat_id to job state. No database write, no file write, no log write. Cleared on process restart.</p>
+          <div class="privacy-status privacy-status--impl">Implemented in code</div>
+        </div>
+      </div>
+
+      <div class="privacy-item">
+        <div class="privacy-icon privacy-icon--green">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class="privacy-item-text">
+          <h4>Zero access logs</h4>
+          <p><code>access_log off;</code> is present in <code>delivery/nginx.conf</code>. No HTTP access log file will be created on the delivery VPS.</p>
+          <div class="privacy-status privacy-status--impl">Implemented in code</div>
+        </div>
+      </div>
+
+      <div class="privacy-item">
+        <div class="privacy-icon privacy-icon--green">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class="privacy-item-text">
+          <h4>Token one-time</h4>
+          <p>Token is popped from the in-memory dict on first <code>GET /file/{token}</code> before streaming begins. File is deleted via async generator after last byte yielded. Two-layer guarantee.</p>
+          <div class="privacy-status privacy-status--impl">Implemented in code</div>
+        </div>
+      </div>
+
+      <div class="privacy-item">
+        <div class="privacy-icon privacy-icon--clock">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <div class="privacy-item-text">
+          <h4>VPS anonymity</h4>
+          <p>Provider choice (1984.is or OrangeWebsite) and Monero payment are operator decisions at provisioning time. Cannot be verified until VPS is created.</p>
+          <div class="privacy-status privacy-status--pend">Pending deploy</div>
+        </div>
+      </div>
+
+      <div class="privacy-item">
+        <div class="privacy-icon privacy-icon--clock">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <div class="privacy-item-text">
+          <h4>Cloud Run no-disk persistence</h4>
+          <p>Configure with <code>--no-allow-unauthenticated</code> set correctly and verify ephemeral <code>/tmp</code> behavior. Cloud Run instances do not persist storage between requests by default — confirm at deploy time.</p>
+          <div class="privacy-status privacy-status--pend">Pending deploy</div>
+        </div>
+      </div>
+
+    </ul>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="logo-mark" style="width:24px;height:24px;font-size:12px;">C/</div>
+        <span class="footer-copy">carpaccio &middot; zero_hero build log</span>
+      </div>
+      <div class="footer-links">
+        <a href="#decisions">Decisions</a>
+        <a href="#components">Components</a>
+        <a href="#files">Files</a>
+        <a href="#pending">Pending</a>
+        <a href="index.html">Product page</a>
+      </div>
+    </div>
+    <div class="footer-note">Internal implementation log. No cookies. No analytics. No tracking. This page contains no external resources.</div>
+  </div>
+</footer>
+
+<script>
+  function toggle(el) {
+    el.closest('.faq-item').classList.toggle('open');
+  }
+</script>
+
+</body>
+</html>

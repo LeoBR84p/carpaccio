@@ -1,0 +1,15 @@
+[project]
+name = "carpaccio"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyfiglet>=1.0",
+    "pyperclip>=1.11.0",
+    "requests>=2.34.2",
+    "rich>=15.0.0",
+    "setuptools<71",
+    "spotdl>=3.9.6",
+    "yt-dlp>=2024.1.1",
+]
