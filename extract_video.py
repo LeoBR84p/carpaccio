@@ -15,11 +15,14 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
+from collections import deque
 from html import unescape
 from pathlib import Path
 from urllib.parse import urlparse
+
 
 FFMPEG = r".\ffmpeg\bin\ffmpeg.exe"
 _CF_CACHE = Path(__file__).parent / ".cf_cookies.json"
@@ -33,6 +36,133 @@ def _ffmpeg_cmd(source: dict[str, str], out: str) -> str:
         headers = f"Referer: {ref}\\r\\nUser-Agent: {_UA}\\r\\n"
         return f'{FFMPEG} -headers "{headers}" -i "{source["url"]}" -c copy "{out}"'
     return f'{FFMPEG} -i "{source["url"]}" -c copy "{out}"'
+
+
+_TIME_RE = r"(\d+):(\d{2}):(\d{2}(?:\.\d+)?)"
+
+
+def _make_progress():
+    """Barra rich com percentual, tempo decorrido e restante (None sem rich)."""
+    try:
+        from rich.progress import (
+            BarColumn,
+            Progress,
+            TaskProgressColumn,
+            TextColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+        )
+    except ImportError:
+        return None
+    return Progress(
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("decorrido"),
+        TimeElapsedColumn(),
+        TextColumn("restante"),
+        TimeRemainingColumn(),
+    )
+
+
+def _to_seconds(h: str, m: str, s: str) -> float:
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def _download(source: dict[str, str], out: str) -> bool:
+    """Run ffmpeg directly (arg list, sem shell — imune a problemas de aspas)."""
+    cmd = [FFMPEG, "-y", "-hide_banner", "-nostats"]
+    ref = source.get("referer")
+    if ref:
+        # -headers exige CRLF real, não a sequência literal \r\n
+        cmd += ["-headers", f"Referer: {ref}\r\nUser-Agent: {_UA}\r\n"]
+    cmd += ["-i", source["url"], "-c", "copy", "-progress", "pipe:1", out]
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace",
+        )
+    except FileNotFoundError:
+        print(f"ffmpeg não encontrado em {FFMPEG}", file=sys.stderr)
+        return False
+
+    # duração total vem do stderr (linha "Duration: ..."); lido em thread
+    # para a barra não travar caso o stderr encha o buffer do pipe
+    duration: dict[str, float] = {}
+    stderr_tail: deque[str] = deque(maxlen=15)
+
+    def _read_stderr() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            stderr_tail.append(line.rstrip())
+            m = re.search(rf"Duration:\s*{_TIME_RE}", line)
+            if m and "total" not in duration:
+                duration["total"] = _to_seconds(*m.groups())
+
+    threading.Thread(target=_read_stderr, daemon=True).start()
+
+    progress = _make_progress()
+    if progress is None:  # rich não instalado: baixa sem barra
+        print("[rich não instalado — sem barra de progresso; uv add rich]")
+        proc.communicate()
+        return proc.returncode == 0
+
+    try:
+        with progress:
+            task = progress.add_task(out, total=None)
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if "total" in duration and progress.tasks[0].total is None:
+                    progress.update(task, total=duration["total"])
+                m = re.match(rf"out_time={_TIME_RE}", line.strip())
+                if m:
+                    progress.update(task, completed=_to_seconds(*m.groups()))
+            proc.wait()
+            if proc.returncode == 0 and "total" in duration:
+                progress.update(task, completed=duration["total"])
+    except KeyboardInterrupt:
+        proc.kill()
+        print("\n[download cancelado]")
+        return False
+
+    if proc.returncode != 0:
+        print("\n".join(stderr_tail), file=sys.stderr)
+    return proc.returncode == 0
+
+
+def _titled_filename(safe_title: str, source: dict[str, str]) -> str:
+    label = source["label"]
+    suffix = f"_{label}p" if label.isdigit() else f"_{label}"
+    return f"{safe_title}{suffix}.mp4"
+
+
+def _list_and_offer(items: list[tuple[dict[str, str], str]]) -> None:
+    """Lista as fontes com seus comandos e oferece baixar direto pelo script."""
+    for s, out in items:
+        print(f"  [{s['label']}]  {out}")
+        print(f"  {_ffmpeg_cmd(s, out)}")
+        print()
+    if not sys.stdin.isatty():
+        return
+    by_label = {s["label"]: (s, out) for s, out in items}
+    try:
+        choice = input(
+            "Baixar agora? Digite a qualidade (ou 'all' para todas; Enter para sair): "
+        ).strip()
+    except (EOFError, KeyboardInterrupt):
+        return
+    if not choice:
+        return
+    chosen = list(items) if choice.lower() == "all" else (
+        [by_label[choice]] if choice in by_label else []
+    )
+    if not chosen:
+        print(f"Qualidade '{choice}' não encontrada.")
+        return
+    for s, out in chosen:
+        print(f"\n[baixando {out}...]")
+        ok = _download(s, out)
+        print("[concluído]" if ok else "[falhou]")
 
 
 def _get_cf_clearance(domain: str) -> str | None:
@@ -498,7 +628,18 @@ def extract_sources_ytdlp(url: str) -> tuple[list[dict[str, str]], str]:
             ["yt-dlp", "--no-playlist", "-j", url],
             capture_output=True, text=True, check=True,
         )
-        info = json.loads(result.stdout)
+        # -j emite um objeto JSON por linha; páginas com vários vídeos
+        # geram várias linhas mesmo com --no-playlist
+        entries = [
+            json.loads(line)
+            for line in result.stdout.splitlines()
+            if line.strip()
+        ]
+        if not entries:
+            raise YtdlpError(result.stderr or "yt-dlp não retornou JSON")
+        if len(entries) > 1:
+            print(f"[{len(entries)} vídeos encontrados; usando o primeiro]")
+        info = entries[0]
     except FileNotFoundError:
         print("yt-dlp não encontrado. Instale com: uv add yt-dlp", file=sys.stderr)
         sys.exit(1)
@@ -585,19 +726,12 @@ def main():
                 sys.exit(1)
             if is_user_page:
                 print(f"\nEncontrados {len(sources)} vídeos de '{safe_title}':\n")
-                for s in sources:
-                    out = f"{s['label']}.mp4"
-                    print(f"  {out}")
-                    print(f"  {_ffmpeg_cmd(s, out)}")
-                    print()
+                _list_and_offer([(s, f"{s['label']}.mp4") for s in sources])
             else:
                 print(f"\nEncontradas {len(sources)} qualidades para '{safe_title}':\n")
-                for s in sources:
-                    label = s["label"]
-                    out = f"{safe_title}_{label}.mp4"
-                    print(f"  [{label}]  {out}")
-                    print(f"  {_ffmpeg_cmd(s, out)}")
-                    print()
+                _list_and_offer(
+                    [(s, f"{safe_title}_{s['label']}.mp4") for s in sources]
+                )
             return
 
         try:
@@ -620,13 +754,7 @@ def main():
             print("Nenhum formato de vídeo encontrado.")
             sys.exit(1)
         print(f"\nEncontradas {len(sources)} qualidades para '{safe_title}':\n")
-        for s in sources:
-            label = s["label"]
-            suffix = f"_{label}p" if label.isdigit() else f"_{label}"
-            out = f"{safe_title}{suffix}.mp4"
-            print(f"  [{label}]  {out}")
-            print(f'  {_ffmpeg_cmd(s, out)}')
-            print()
+        _list_and_offer([(s, _titled_filename(safe_title, s)) for s in sources])
         return
 
     sources = extract_sources(raw)
@@ -640,23 +768,17 @@ def main():
                 print("Nenhum formato de vídeo encontrado.")
                 sys.exit(1)
             print(f"\nEncontradas {len(sources)} qualidades para '{safe_title}':\n")
-            for s in sources:
-                label = s["label"]
-                suffix = f"_{label}p" if label.isdigit() else f"_{label}"
-                out = f"{safe_title}{suffix}.mp4"
-                print(f"  [{label}]  {out}")
-                print(f'  {_ffmpeg_cmd(s, out)}')
-                print()
+            _list_and_offer(
+                [(s, _titled_filename(safe_title, s)) for s in sources]
+            )
             return
         print("Nenhuma fonte de vídeo encontrada no HTML.")
         sys.exit(1)
 
     print(f"\nEncontradas {len(sources)} qualidades:\n")
-    for s in sources:
-        out = filename_from_url(s["url"], s["label"])
-        print(f"  [{s['label']}]  {out}")
-        print(f'  {_ffmpeg_cmd(s, out)}')
-        print()
+    _list_and_offer(
+        [(s, filename_from_url(s["url"], s["label"])) for s in sources]
+    )
 
 
 if __name__ == "__main__":
