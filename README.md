@@ -15,6 +15,10 @@ Download `.ts` video segments in parallel, merge them into a single video file, 
 
 Download an M3U8 playlist or a list of `.ts` segment URLs and merge them into a single video.
 
+```bash
+uv run video_downloader.py --m3u8 "https://cdnapisec.kaltura.com/p/2444871/sp/244487100/playManifest/entryId/1_5umuv9sa/protocol/https/format/applehttp/flavorIds/1_vt4s4dz6,1_gx5leptn,1_4utaqzqi,1_io1c0ubx,1_b0imtgys/a.m3u8?uiConfId=46596453&playSessionId=05849001-94eb-dea8-360e-3829dd3c18af:bd4742c2-4412-7369-f255-e3533a7d9d14&referrer=aHR0cHM6Ly9jbGFzcy5tYnguYWNhZGVteS9jbGFzc192Mj90PWY1NGNkMjJkMDNiNTkzMWY0Yjg4NDE1NGMxMDhmMDhl&clientTag=html5:v7.54" --output aula.mp4
+```
+
 ### Downloader Usage
 
 ```bash
