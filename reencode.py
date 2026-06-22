@@ -188,7 +188,8 @@ def _select_speed() -> SpeedMode:
     console.print("  [cyan][4][/cyan] 2x    · No time to lose     [dim](50% shorter)[/dim]")
     console.print("  [cyan][5][/cyan] 2.5x  · Quick               [dim](60% shorter)[/dim]")
     console.print("  [cyan][6][/cyan] 3x    · Flash               [dim](67% shorter)[/dim]")
-    choice = console.input("\nChoice [bold][1/2/3/4/5/6][/bold] (default: 2): ").strip()
+    console.print("  [cyan][7][/cyan] Custom · Enter your own value [dim](e.g. 1.75)[/dim]")
+    choice = console.input("\nChoice [bold][1/2/3/4/5/6/7][/bold] (default: 2): ").strip()
     if choice == "1":
         return SpeedMode(0.5, "0.5x · Slow down", "_0.5x")
     if choice == "3":
@@ -199,7 +200,28 @@ def _select_speed() -> SpeedMode:
         return SpeedMode(2.5, "2.5x · Quick", "_2.5x")
     if choice == "6":
         return SpeedMode(3.0, "3x · Flash", "_3x")
+    if choice == "7":
+        return _custom_speed()
     return SpeedMode(1.0, "1x · Normal", "")
+
+
+def _custom_speed() -> SpeedMode:
+    """Prompt for a float speed with up to two decimals (e.g. 1.75)."""
+    while True:
+        raw = console.input(
+            "\nEnter output speed (float, up to 2 decimals, e.g. [cyan]1.75[/cyan]): "
+        ).strip()
+        try:
+            speed = round(float(raw), 2)
+        except ValueError:
+            console.print("[red]Invalid number — use a dot as decimal separator (e.g. 1.75).[/red]")
+            continue
+        if speed <= 0:
+            console.print("[red]Speed must be greater than 0.[/red]")
+            continue
+        label  = f"{speed:g}x · Custom"
+        suffix = "" if speed == 1.0 else f"_{speed:g}x"
+        return SpeedMode(speed, label, suffix)
 
 
 # ---------------------------------------------------------------------------
