@@ -550,6 +550,51 @@ def _get_cf_clearance(domain: str) -> str | None:
     return None
 
 
+def _mixdrop_extract(embed_url: str, referer: str | None = None) -> list[dict[str, str]]:
+    """Extract direct video URL from a MixDrop embed page (any TLD).
+
+    MixDrop obfuscates the stream URL in a Dean Edwards p,a,c,k,e,d
+    JavaScript block.  We decode it and read MDCore.wurl.
+    """
+    try:
+        html = fetch_page_html(embed_url, referer=referer)
+    except Exception as e:
+        print(f"[mixdrop] Erro ao buscar embed: {e}", file=sys.stderr)
+        return []
+
+    idx = html.find("eval(function(p,a,c,k,e,d)")
+    if idx < 0:
+        return []
+    chunk = html[idx: idx + 10000]
+
+    m = re.search(
+        r"\}\('([^']*)',\s*\d+,\s*\d+,\s*'([^']*)'\s*\.split\('\|'\)",
+        chunk,
+    )
+    if not m:
+        return []
+
+    packed_str = m.group(1)
+    keys = m.group(2).split("|")
+
+    def _replace(match: re.Match) -> str:
+        i = int(match.group())
+        return keys[i] if i < len(keys) and keys[i] else match.group()
+
+    decoded = re.sub(r'\b\d+\b', _replace, packed_str)
+
+    wurl = re.search(r'MDCore\.wurl\s*=\s*"([^"]+)"', decoded)
+    if not wurl:
+        return []
+
+    url = wurl.group(1)
+    if url.startswith("//"):
+        url = "https:" + url
+
+    domain = urlparse(embed_url).netloc
+    return [{"url": url, "label": "original", "referer": f"https://{domain}/"}]
+
+
 def _doodstream_extract(embed_url: str) -> list[dict[str, str]]:
     """DoodStream / playmogo pass_md5 extraction flow."""
     domain = urlparse(embed_url).netloc
@@ -718,7 +763,7 @@ EMBED_DOMAINS = re.compile(
     r"|streamtape\.com"
     r"|doodstream\.com"
     r"|filemoon\.sx"
-    r"|mixdrop\.co"
+    r"|mixdrop\.\w+"
     r"|vidmoly\.to"
     r"|voe\.sx"
     r"|upstream\.to"
@@ -937,6 +982,13 @@ def _resolve_embed(
     except YtdlpError:
         safe_title = re.sub(r'[\\/*?:"<>|]', "_", page_title or "video")
 
+        # MixDrop (any TLD): decode packed JS → MDCore.wurl
+        if re.search(r'mixdrop\.\w+/', embed_url):
+            print("[tentando extração MixDrop...]")
+            sources = _mixdrop_extract(embed_url, referer=referer)
+            if sources:
+                return sources, safe_title
+
         # DoodStream / playmogo pass_md5 protocol
         print("[tentando extração DoodStream...]")
         sources = _doodstream_extract(embed_url)
@@ -1029,7 +1081,11 @@ def filename_from_url(url: str, label: str) -> str:
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] != "-":
-        raw = Path(sys.argv[1]).read_text(encoding="utf-8")
+        arg = sys.argv[1]
+        if is_plain_url(arg):
+            raw = arg  # URL passada diretamente como argumento
+        else:
+            raw = Path(arg).read_text(encoding="utf-8")
     elif len(sys.argv) > 1 and sys.argv[1] == "-":
         raw = sys.stdin.read()
     else:

@@ -363,6 +363,110 @@ def merge_segments(
     console.print(f"[green]Video saved:[/green] {output}")
 
 
+_DIRECT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Referer": "https://www.erome.com/",
+}
+
+
+def _download_chunk(
+    url: str,
+    start: int,
+    end: int,
+    dest: Path,
+    progress: "Progress",
+    task_id: int,
+) -> None:
+    """Download a single byte-range chunk to *dest*."""
+    s = requests.Session()
+    s.headers.update(_DIRECT_HEADERS)
+    s.headers.update({"Range": f"bytes={start}-{end}"})
+    with s.get(url, stream=True, timeout=120) as resp:
+        resp.raise_for_status()
+        with open(dest, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=131072):
+                f.write(chunk)
+                progress.advance(task_id, len(chunk))
+
+
+def download_direct(url: str, output: Path, workers: int = 8) -> None:
+    """Download a direct video URL using parallel byte-range requests."""
+    # Probe file size and range support
+    probe = requests.Session()
+    probe.headers.update(_DIRECT_HEADERS)
+    head = probe.head(url, allow_redirects=True, timeout=15)
+    head.raise_for_status()
+
+    total = int(head.headers.get("Content-Length", 0))
+    accepts_ranges = head.headers.get("Accept-Ranges", "none").lower() == "bytes"
+
+    columns = [
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        FileSizeColumn(),
+        TextColumn("/"),
+        TotalFileSizeColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+    ]
+
+    if not accepts_ranges or total == 0:
+        # Fallback: single-threaded streaming
+        console.print("[yellow]Servidor não suporta byte-range; download sequencial.[/yellow]")
+        with probe.get(url, stream=True, timeout=120) as resp:
+            resp.raise_for_status()
+            size = int(resp.headers.get("Content-Length", 0)) or None
+            with Progress(*columns, console=console) as progress:
+                task = progress.add_task("Downloading", total=size)
+                with open(output, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=131072):
+                        f.write(chunk)
+                        progress.advance(task, len(chunk))
+        console.print(f"[green]Video saved:[/green] {output}")
+        return
+
+    # Build ranges — at least 4 MB per chunk, cap at *workers* chunks
+    min_chunk = 4 * 1024 * 1024
+    chunk_size = max(total // workers, min_chunk)
+    ranges: list[tuple[int, int]] = []
+    start = 0
+    while start < total:
+        end = min(start + chunk_size - 1, total - 1)
+        ranges.append((start, end))
+        start = end + 1
+
+    actual_workers = len(ranges)
+    console.print(
+        f"Parallel download: [cyan]{actual_workers}[/cyan] chunks × "
+        f"[cyan]{_fmt_size(chunk_size)}[/cyan]  ([cyan]{_fmt_size(total)}[/cyan] total)"
+    )
+
+    with tempfile.TemporaryDirectory(prefix="direct_dl_") as tmp:
+        work_dir = Path(tmp)
+        chunk_paths = [work_dir / f"chunk_{i:04d}.bin" for i in range(actual_workers)]
+
+        with Progress(*columns, console=console) as progress:
+            task = progress.add_task("Downloading", total=total)
+            with ThreadPoolExecutor(max_workers=actual_workers) as pool:
+                futures = {
+                    pool.submit(
+                        _download_chunk, url, s, e, chunk_paths[i], progress, task,
+                    ): i
+                    for i, (s, e) in enumerate(ranges)
+                }
+                for future in as_completed(futures):
+                    future.result()  # re-raise any exception
+            progress.update(task, completed=total)
+
+        # Concatenate chunks in order
+        console.print("Assembling chunks…")
+        with open(output, "wb") as out_f:
+            for cp in chunk_paths:
+                out_f.write(cp.read_bytes())
+
+    console.print(f"[green]Video saved:[/green] {output}")
+
+
 def download_subtitle(url: str, dest: Path, session: requests.Session) -> None:
     console.print(f"Downloading subtitles from [cyan]{url}[/cyan]")
     resp = session.get(url, timeout=30)
@@ -502,6 +606,8 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Text file with one segment URL per line")
     src.add_argument("--m3u8", metavar="URL_OR_FILE",
                      help="M3U8 playlist URL or local file path")
+    src.add_argument("--direct", metavar="URL",
+                     help="Direct video URL (mp4/webm/etc.) to download as-is")
 
     p.add_argument("--output", "-o", required=True, metavar="FILE",
                    help="Output video file (e.g. video.mp4)")
@@ -523,6 +629,17 @@ def main():
     args = build_parser().parse_args()
     session = requests.Session()
     output = Path(args.output)
+
+    # -- Direct URL mode -------------------------------------------------------
+    if args.direct:
+        if output.exists():
+            console.print(f"[yellow]Aviso:[/yellow] [cyan]{output}[/cyan] já existe.")
+            overwrite = console.input("Sobrescrever? [bold][Y/n][/bold]: ").strip().lower()
+            if overwrite not in ("", "y", "yes", "s", "sim"):
+                console.print("[yellow]Cancelado.[/yellow]")
+                sys.exit(0)
+        download_direct(args.direct, output, workers=args.workers)
+        sys.exit(0)
 
     # -- Output file conflict check --------------------------------------------
     if output.exists():
