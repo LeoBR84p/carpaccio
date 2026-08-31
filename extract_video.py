@@ -9,6 +9,7 @@ Uso:
 """
 
 import base64
+import http.cookiejar
 import json
 import os
 import re
@@ -23,7 +24,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from html import unescape
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 
 
 FFMPEG = r".\ffmpeg\bin\ffmpeg.exe"
@@ -116,9 +117,9 @@ def _download_ytdlp(source: dict[str, str], out: str) -> bool:
     """
     label = source["label"]
     if label.isdigit():
-        fmt = f"bestvideo[height<={label}]+bestaudio/best[height<={label}]/best"
+        fmt = f"bestvideo[height<={label}][ext!=svg]+bestaudio/best[height<={label}][ext!=svg]/best"
     else:
-        fmt = "bestvideo+bestaudio/best"
+        fmt = "bestvideo[ext!=svg]+bestaudio/best[ext!=svg]/best"
     cmd = [
         "yt-dlp", "--no-playlist", "-N", "8",
         "-f", fmt, "--remux-video", "mp4",
@@ -367,6 +368,9 @@ def _download(
         duração, mesmo com a live no ar).
     """
     url = source.get("url", "")
+    if source.get("seg_urls"):  # fMP4 segmentado (videosh): init + segmentos
+        return _download_numbered_segments(source, out, limit_min)
+
     if source.get("page_url") and ".m3u8" in url:  # HLS: download por segmentos
         res = _download_hls_segments(source, out, limit_min)
         if res is not None:
@@ -469,7 +473,10 @@ def _list_and_offer(items: list[tuple[dict[str, str], str]]) -> None:
     """Lista as fontes com seus comandos e oferece baixar direto pelo script."""
     for s, out in items:
         print(f"  [{s['label']}]  {out}")
-        if s.get("page_url"):  # fonte yt-dlp: mostra comando curto (URL enorme)
+        if s.get("seg_urls"):  # fMP4 segmentado: não há comando ffmpeg único
+            print(f"  {len(s['seg_urls'])} segmentos fMP4 — baixe por aqui "
+                  f"(as URLs são assinadas e expiram em minutos)")
+        elif s.get("page_url"):  # fonte yt-dlp: mostra comando curto (URL enorme)
             print(f'  yt-dlp -N 8 -f "<={s["label"]}" -o "{out}" {s["page_url"]}')
         else:
             print(f"  {_ffmpeg_cmd(s, out)}")
@@ -593,6 +600,463 @@ def _mixdrop_extract(embed_url: str, referer: str | None = None) -> list[dict[st
 
     domain = urlparse(embed_url).netloc
     return [{"url": url, "label": "original", "referer": f"https://{domain}/"}]
+
+
+# vinovo.si redireciona para vinovo.to; a sessão e o token valem no domínio final
+VINOVO_HOST = "https://vinovo.to"
+VINOVO_RE = re.compile(
+    r"https?://(?:www\.)?vinovo\.(?:si|to|sx|tv)/(?:e|d|f|v)/([A-Za-z0-9]+)", re.I
+)
+
+
+def _vinovo_extract(
+    embed_url: str, referer: str | None = None
+) -> tuple[list[dict[str, str]], str | None]:
+    """Extrai o stream de um embed Vinovo. Retorna (sources, título).
+
+    O player não traz a URL no HTML: ele lê <meta name="token"> e o data-base
+    do <video>, e faz um POST em /api/file/url/<file_code> que devolve
+    "<file_code>/<assinatura>/<expiração>".  O stream final é
+    <data-base>/stream/<isso>.
+
+    Dois detalhes que fazem a chamada falhar silenciosamente ("status":"fail"):
+      • o POST exige o header Origin além do PHPSESSID da mesma sessão;
+      • o token é de uso único — cada extração precisa de um GET novo do embed.
+    A URL assinada expira em poucos minutos, então baixe logo após extrair.
+    """
+    m = VINOVO_RE.match(embed_url)
+    if not m:
+        return [], None
+    code = m.group(1)
+
+    cj = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+
+    def _open(url: str, data: dict[str, str] | None = None, **extra: str) -> str:
+        headers = {"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9", **extra}
+        body = urlencode(data).encode() if data else None
+        req = urllib.request.Request(url, data=body, headers=headers)
+        with opener.open(req, timeout=20) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+
+    try:
+        html = _open(f"{VINOVO_HOST}/e/{code}", Referer=referer or f"{VINOVO_HOST}/")
+    except Exception as e:
+        print(f"[vinovo] Erro ao buscar embed: {e}", file=sys.stderr)
+        return [], None
+
+    tok = re.search(r'name="token"\s+content="([^"]+)"', html)
+    base = re.search(r'data-base="([^"]+)"', html)
+    if not tok or not base:
+        print("[vinovo] token/data-base não encontrados no embed.", file=sys.stderr)
+        return [], None
+
+    try:
+        raw = _open(
+            f"{VINOVO_HOST}/api/file/url/{code}",
+            {"token": tok.group(1)},
+            Referer=f"{VINOVO_HOST}/e/{code}",
+            Origin=VINOVO_HOST,
+            Accept="*/*",
+            **{"X-Requested-With": "XMLHttpRequest"},
+        )
+        payload = json.loads(raw)
+    except Exception as e:
+        print(f"[vinovo] Erro na API: {e}", file=sys.stderr)
+        return [], None
+
+    if payload.get("status") != "ok" or not payload.get("token"):
+        print(
+            f"[vinovo] API recusou: {payload.get('message') or payload.get('status')}",
+            file=sys.stderr,
+        )
+        return [], None
+
+    # título do embed: "<modelo> - <data da gravação> - VINOVO"
+    title = None
+    tm = re.search(r"<title>([^<]*)</title>", html)
+    if tm:
+        title = re.sub(r"\s*-\s*VINOVO\s*$", "", unescape(tm.group(1))).strip() or None
+
+    source = {
+        "url": f"{base.group(1)}/stream/{payload['token']}",
+        "label": "original",
+        "referer": f"{VINOVO_HOST}/",
+    }
+    return [source], title
+
+
+# Nada de bloquear requisição aqui.  Interceptar rotas desativa o cache do
+# Chromium e muda o timing da carga, e players com pré-roll não pedem o
+# conteúdo se a cadeia de anúncio falhar — bloquear anúncio fazia o xpornium
+# nunca trocar o src.  Os popunders são neutralizados fechando as abas que
+# eles abrem (ctx.on("page", ...)), que é o suficiente.
+
+# hosts de criativo de anúncio: nunca são o vídeo pedido
+_AD_MEDIA_HOSTS = (
+    "2mdn.net", "doubleclick", "imasdk", "subduepaler.cyou",
+)
+
+# Alguns players (vidstack/videosh) checam navigator.webdriver e simplesmente
+# não carregam o vídeo num browser automatizado — o <video> fica com src vazio
+# para sempre.  Mascarar os sinais óbvios é o que os faz tocar.
+_STEALTH_JS = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+window.chrome = window.chrome || {runtime: {}};
+"""
+
+_STEALTH_ARGS = [
+    "--autoplay-policy=no-user-gesture-required",
+    "--disable-blink-features=AutomationControlled",
+]
+
+
+# dispara o play em <video> e web components, atravessando shadow DOM
+_PLAY_JS = """() => {
+  const walk = (root) => {
+    for (const el of root.querySelectorAll('*')) {
+      if ((el.tagName === 'VIDEO' || el.tagName === 'MEDIA-PLAYER') && el.play) {
+        try { el.muted = true; el.play(); } catch (e) {}
+      }
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(document);
+}"""
+
+# lê o currentSrc de todo <video>, inclusive dentro de shadow DOM.  É o sinal
+# mais confiável: aponta para o conteúdo, não para o criativo do pré-roll.
+_SRC_JS = """() => {
+  const out = [];
+  const walk = (root) => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.tagName === 'VIDEO') {
+        const s = el.currentSrc || el.src || '';
+        if (s) out.push(s);
+      }
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(document);
+  return out;
+}"""
+
+
+def _browser_extract(
+    embed_url: str, referer: str | None = None, timeout_s: int = 90
+) -> list[dict[str, str]]:
+    """Último recurso: abre o embed num Chromium e observa o pedido de mídia.
+
+    Players modernos montam a URL em JS ofuscado (ou a recebem cifrada de uma
+    API), então não há o que casar por regex no HTML.  Em vez de reverter cada
+    host, deixamos o próprio player resolver e capturamos a requisição de vídeo
+    — o que continua funcionando quando o host troca a ofuscação.
+
+    Requer `uv add playwright` + `playwright install chromium`.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print(
+            "[browser] playwright não instalado — "
+            "rode: uv add playwright && uv run playwright install chromium",
+            file=sys.stderr,
+        )
+        return []
+
+    exts = (".mp4", ".m3u8", ".webm", ".mkv")
+    media: list[str] = []       # requisições de mídia observadas
+    found: str | None = None    # currentSrc do <video> — sinal preferido
+
+    def _is_ad(url: str) -> bool:
+        return any(h in url for h in _AD_MEDIA_HOSTS)
+
+    def _usable(url: str) -> bool:
+        return url.startswith("http") and not _is_ad(url)
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True, args=_STEALTH_ARGS)
+            # Só a origem, nunca a URL completa da página: esse Referer vai em
+            # TODA requisição do contexto, e mandar a URL do vídeo nas chamadas
+            # internas do player trava a cadeia — o src nunca deixa o pré-roll.
+            ref_origin = None
+            if referer:
+                r = urlparse(referer)
+                if r.scheme and r.netloc:
+                    ref_origin = f"{r.scheme}://{r.netloc}/"
+
+            ctx = browser.new_context(
+                user_agent=_UA,
+                viewport={"width": 1280, "height": 720},
+                extra_http_headers={"Referer": ref_origin} if ref_origin else None,
+            )
+            ctx.add_init_script(_STEALTH_JS)
+            page = ctx.new_page()
+            # popunders abrem abas novas; fecha todas menos a principal
+            ctx.on("page", lambda pg: pg is not page and pg.close())
+
+            def on_request(req) -> None:
+                url = req.url
+                if req.resource_type == "media" or url.split("?")[0].lower().endswith(exts):
+                    if _usable(url):
+                        media.append(url)
+
+            page.on("request", on_request)
+            page.goto(embed_url, wait_until="domcontentloaded", timeout=timeout_s * 1000)
+
+            # Muitos players só pedem o vídeo após um clique real, e alguns
+            # levam ~15s (pré-roll) para trocar o src do <video> pelo conteúdo.
+            # Clicar em todos os alvos, e não parar no primeiro que existir:
+            # o botão de play pode estar presente e ainda assim inerte.
+            deadline = time.monotonic() + timeout_s
+            rounds = 0
+            while found is None and time.monotonic() < deadline:
+                page.wait_for_timeout(5000)
+                rounds += 1
+
+                # play() programático só depois que o clique já teve chance:
+                # num player com pré-roll IMA, forçar play() no <video> de
+                # conteúdo atropela a sequência anúncio→conteúdo e o src nunca
+                # é trocado.  Serve aos players em shadow DOM, que ignoram clique.
+                if rounds > 2:
+                    for frame in page.frames:
+                        try:
+                            frame.evaluate(_PLAY_JS)
+                        except Exception:
+                            pass  # frame trocou no meio do eval
+
+                for sel in (".vjs-big-play-button", "video", "#video", "body"):
+                    try:
+                        el = page.query_selector(sel)
+                        if el:
+                            # curto de propósito: são 4 seletores por rodada e o
+                            # orçamento total precisa caber várias rodadas
+                            el.click(timeout=1200, force=True)
+                    except Exception:
+                        pass
+
+                seen_srcs: list[str] = []
+                for frame in page.frames:
+                    try:
+                        for src in frame.evaluate(_SRC_JS):
+                            seen_srcs.append(src)
+                            # blob: = MSE; a URL real aparece nas requisições
+                            if _usable(src):
+                                found = src
+                                break
+                    except Exception as e:
+                        seen_srcs.append(f"<eval erro: {type(e).__name__}>")
+                    if found:
+                        break
+
+                if os.environ.get("CARPACCIO_DEBUG"):
+                    print(
+                        f"[browser] rodada {rounds}: frames={len(page.frames)} "
+                        f"srcs={seen_srcs} media={media}",
+                        file=sys.stderr,
+                    )
+
+            browser.close()
+    except Exception as e:
+        print(f"[browser] Falhou: {type(e).__name__}: {e}", file=sys.stderr)
+        return []
+
+    url = found or (media[0] if media else None)
+    if not url:
+        return []
+
+    origin = urlparse(embed_url)
+    return [{
+        "url": url,
+        "label": "original",
+        "referer": f"{origin.scheme}://{origin.netloc}/",
+    }]
+
+
+VIDEOSH_RE = re.compile(r"https?://(?:[\w-]+\.)*upns\.live/", re.I)
+_SEG_RE = re.compile(r"(https://[^/]+/v\d+/[^/]+/[^/]+/)(?:seg-(\d+)|init)(-[^?]+)\?(.+)")
+
+
+def _videosh_extract(
+    embed_url: str, referer: str | None = None
+) -> tuple[list[dict], str | None]:
+    """Extrai o stream fMP4 segmentado do videosh (upns.live).
+
+    O player é vidstack e alimenta o <video> por MSE, então o src é um
+    blob: — não há URL direta para o ffmpeg.  Os segmentos vêm assim:
+
+        <base>/seg-<N>-f1-v1-a1.woff2?k=<chave>&kx=<janela>
+        <base>/init-f1-v1-a1.woff    ?k=<chave>&kx=<janela>   (moov)
+
+    Detalhes que definem a estratégia:
+      • as extensões são disfarce — é fMP4, não fonte (init usa .woff e os
+        segmentos .woff2), e nada disso casa com resource_type "media";
+      • a chave é GLOBAL, não por segmento: capturar uma serve para todos os
+        índices, o que permite baixar em paralelo em vez de em tempo real;
+      • o player só carrega se navigator.webdriver estiver mascarado.
+
+    A numeração começa em 1; o fim é achado por busca binária (404 acima).
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("[videosh] playwright não instalado.", file=sys.stderr)
+        return [], None
+
+    hits: list[str] = []
+    duration = 0.0
+    title = None
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True, args=_STEALTH_ARGS)
+            ctx = browser.new_context(
+                user_agent=_UA,
+                viewport={"width": 1280, "height": 720},
+                extra_http_headers={"Referer": referer} if referer else None,
+            )
+            ctx.add_init_script(_STEALTH_JS)
+            page = ctx.new_page()
+            ctx.on("page", lambda pg: pg is not page and pg.close())
+            page.on(
+                "request",
+                lambda r: _SEG_RE.match(r.url) and hits.append(r.url),
+            )
+            page.goto(embed_url, wait_until="domcontentloaded", timeout=60000)
+
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                page.wait_for_timeout(4000)
+                for frame in page.frames:
+                    try:
+                        frame.evaluate(_PLAY_JS)
+                    except Exception:
+                        pass
+                for sel in (".vjs-big-play-button", "video", "body"):
+                    try:
+                        el = page.query_selector(sel)
+                        if el:
+                            el.click(timeout=1200, force=True)
+                    except Exception:
+                        pass
+                if any("/init" in u for u in hits) and any("/seg-" in u for u in hits):
+                    break
+
+            try:
+                duration = page.evaluate(
+                    "() => { const v = document.querySelector('video');"
+                    " return v && isFinite(v.duration) ? v.duration : 0; }"
+                ) or 0.0
+            except Exception:
+                pass
+            try:
+                title = re.sub(r"\.mp4$", "", page.title()).strip() or None
+            except Exception:
+                pass
+            browser.close()
+    except Exception as e:
+        print(f"[videosh] Falhou: {type(e).__name__}: {e}", file=sys.stderr)
+        return [], None
+
+    init_url = next((u for u in hits if "/init" in u), None)
+    seg_url = next((u for u in hits if "/seg-" in u), None)
+    if not (init_url and seg_url):
+        print("[videosh] não capturei init/segmento.", file=sys.stderr)
+        return [], None
+
+    m = _SEG_RE.match(seg_url)
+    if not m:
+        return [], None
+    base, _, suffix, query = m.groups()
+    ref = f"https://{urlparse(embed_url).netloc}/"
+
+    # fim da sequência por busca binária (a chave vale para qualquer índice)
+    lo, hi = 1, 2048
+    while lo + 1 < hi:
+        mid = (lo + hi) // 2
+        try:
+            _http_get(f"{base}seg-{mid}{suffix}?{query}", ref, retries=1)
+            lo = mid
+        except Exception:
+            hi = mid
+    print(f"[videosh] {lo} segmentos")
+
+    source = {
+        "url": init_url,
+        "label": "original",
+        "referer": ref,
+        "seg_init": init_url,
+        "seg_urls": [f"{base}seg-{i}{suffix}?{query}" for i in range(1, lo + 1)],
+        "seg_duration": (duration / lo) if duration and lo else 0.0,
+    }
+    return [source], title
+
+
+def _download_numbered_segments(
+    source: dict, out: str, limit_min: float | None = None, workers: int = 12
+) -> bool:
+    """Baixa init + segmentos fMP4 numerados, concatena e remuxa para mp4.
+
+    fMP4 é byte-concatenável desde que o init (moov) venha primeiro — sem ele
+    os fragmentos moof/mdat não são decodificáveis.
+    """
+    seg_urls = list(source["seg_urls"])
+    referer = source.get("referer")
+
+    if limit_min and source.get("seg_duration"):
+        keep = max(1, int((limit_min * 60) / source["seg_duration"]))
+        seg_urls = seg_urls[:keep]
+
+    tmp = tempfile.mkdtemp(prefix="fmp4dl_")
+    progress = _make_hls_progress()
+
+    def _fetch(job: tuple[int, str]) -> int:
+        i, url = job
+        data = _http_get(url, referer)
+        with open(os.path.join(tmp, f"{i:06d}.m4s"), "wb") as f:
+            f.write(data)
+        return len(data)
+
+    try:
+        init_data = _http_get(source["seg_init"], referer)
+        jobs = list(enumerate(seg_urls))
+        if progress is None:
+            print(f"[fmp4] baixando {len(jobs)} segmentos...")
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                list(ex.map(_fetch, jobs))
+        else:
+            done_bytes = 0
+            with progress:
+                task = progress.add_task(_short(out, 30), total=len(jobs), mb=0.0)
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    futs = [ex.submit(_fetch, j) for j in jobs]
+                    for n, fut in enumerate(as_completed(futs), 1):
+                        done_bytes += fut.result()
+                        progress.update(task, completed=n, mb=done_bytes / 1e6)
+
+        merged = os.path.join(tmp, "all.mp4")
+        with open(merged, "wb") as o:
+            o.write(init_data)
+            for i in range(len(jobs)):
+                p = os.path.join(tmp, f"{i:06d}.m4s")
+                with open(p, "rb") as f:
+                    shutil.copyfileobj(f, o)
+                os.remove(p)
+        r = subprocess.run(
+            [FFMPEG, "-y", "-hide_banner", "-loglevel", "error",
+             "-i", merged, "-c", "copy", out]
+        )
+        return r.returncode == 0
+    except KeyboardInterrupt:
+        print("\n[download cancelado]")
+        return False
+    except Exception as e:
+        print(f"[fmp4] erro no download: {e}", file=sys.stderr)
+        return False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _doodstream_extract(embed_url: str) -> list[dict[str, str]]:
@@ -742,6 +1206,19 @@ def extract_sources(html: str) -> list[dict[str, str]]:
             except Exception:
                 pass
 
+    # YouPorn / PornHub: "videoUrl":"...","quality":"720" or "quality":0 (HLS)
+    if not sources:
+        seen_yp: set[str] = set()
+        for m in re.finditer(r'"videoUrl"\s*:\s*"([^"]+)"', html):
+            url = _json_unescape(m.group(1))
+            if url in seen_yp:
+                continue
+            seen_yp.add(url)
+            ctx = html[max(0, m.start() - 120):m.end() + 120]
+            q = re.search(r'"quality"\s*:\s*"?(\d+)"?', ctx)
+            label = (q.group(1) if q else "original") if not q or q.group(1) != "0" else "hls"
+            sources.append({"url": url, "label": label})
+
     # Brute-force: any https URL pointing to a video file anywhere in the page
     if not sources:
         seen_bf: set[str] = set()
@@ -770,6 +1247,7 @@ EMBED_DOMAINS = re.compile(
     r"|vtube\.to"
     r"|speedvid\.net"
     r"|supervideo\.tv"
+    r"|vinovo\.(?:si|to|sx|tv)"
     r")[^\s\"']+"
 )
 
@@ -803,11 +1281,15 @@ def extract_embed_info(html: str) -> tuple[str | None, str | None]:
         if m:
             embed_url = m.group(1)
 
-    # last resort: any iframe src with a URL (catches unknown embed hosts)
+    # last resort: any iframe src with a URL (catches unknown embed hosts).
+    # aceita também src protocol-relative ("//host/embed/x"), comum nesses sites
     if not embed_url:
-        m = re.search(r'<iframe[^>]+src=["\']?(https?://[^\s"\'<>]+)["\']?', html)
+        m = re.search(r'<iframe[^>]+src=["\']?((?:https?:)?//[^\s"\'<>]+)["\']?', html)
         if m:
             embed_url = m.group(1)
+
+    if embed_url and embed_url.startswith("//"):
+        embed_url = "https:" + embed_url
 
     title: str | None = None
 
@@ -982,6 +1464,26 @@ def _resolve_embed(
     except YtdlpError:
         safe_title = re.sub(r'[\\/*?:"<>|]', "_", page_title or "video")
 
+        # Videosh/upns: fMP4 segmentado via MSE (ver _videosh_extract)
+        if VIDEOSH_RE.match(embed_url):
+            print("[tentando extração Videosh...]")
+            sources, vsh_title = _videosh_extract(embed_url, referer=referer)
+            if sources:
+                if vsh_title:
+                    safe_title = re.sub(r'[\\/*?:"<>|]', "_", vsh_title)
+                return sources, safe_title
+
+        # Vinovo: POST assinado em /api/file/url/ (ver _vinovo_extract)
+        if VINOVO_RE.match(embed_url):
+            print("[tentando extração Vinovo...]")
+            sources, vinovo_title = _vinovo_extract(embed_url, referer=referer)
+            if sources:
+                # o título do embed traz modelo + data da gravação, então é único
+                # por vídeo; o da página do site repete entre vídeos do mesmo perfil
+                if vinovo_title:
+                    safe_title = re.sub(r'[\\/*?:"<>|]', "_", vinovo_title)
+                return sources, safe_title
+
         # MixDrop (any TLD): decode packed JS → MDCore.wurl
         if re.search(r'mixdrop\.\w+/', embed_url):
             print("[tentando extração MixDrop...]")
@@ -1001,8 +1503,14 @@ def _resolve_embed(
             embed_html = fetch_page_html(embed_url, referer=referer)
         except Exception as e:
             print(f"Erro ao buscar embed: {e}", file=sys.stderr)
-            sys.exit(1)
-        sources = extract_sources(embed_html)
+            embed_html = ""
+        sources = extract_sources(embed_html) if embed_html else []
+        if sources:
+            return sources, safe_title
+
+        # Nada no HTML: o player monta a URL em JS. Deixa o browser resolver.
+        print("[abrindo o player num browser para capturar o vídeo...]")
+        sources = _browser_extract(embed_url, referer=referer)
         return sources, safe_title
 
 
@@ -1034,10 +1542,14 @@ def extract_sources_ytdlp(url: str) -> tuple[list[dict[str, str]], str]:
     title = info.get("title") or info.get("id", "video")
     safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
 
+    _IMG_EXTS: frozenset[str] = frozenset({"svg", "png", "jpg", "jpeg", "gif", "webp"})
+
     sources: list[dict[str, str]] = []
     seen: set[str] = set()
     for fmt in info.get("formats", []):
         if fmt.get("vcodec", "none") == "none":
+            continue
+        if fmt.get("ext", "") in _IMG_EXTS:  # skip avatar/thumbnail images
             continue
         height = fmt.get("height")
         if not height:
@@ -1054,6 +1566,8 @@ def extract_sources_ytdlp(url: str) -> tuple[list[dict[str, str]], str]:
 
     # fallback: formato único sem lista de formats (e.g. direct stream)
     if not sources and info.get("url"):
+        if info.get("ext", "") in _IMG_EXTS:
+            raise YtdlpError(f"yt-dlp retornou apenas imagem ({info.get('ext')}); tentando HTML")
         height = info.get("height")
         label = str(height) if height else "original"
         ref = (info.get("http_headers") or {}).get("Referer")
@@ -1062,8 +1576,11 @@ def extract_sources_ytdlp(url: str) -> tuple[list[dict[str, str]], str]:
             s["referer"] = ref
         sources.append(s)
 
+    if not sources:
+        raise YtdlpError("nenhum formato de vídeo encontrado pelo yt-dlp; tentando HTML")
+
     # if yt-dlp provided no Referer in any format, use the input page URL
-    if sources and not any(s.get("referer") for s in sources):
+    if not any(s.get("referer") for s in sources):
         for s in sources:
             s["referer"] = url
 
@@ -1135,10 +1652,15 @@ def main():
                 sys.exit(1)
             embed_url, page_title = extract_embed_info(page_html)
             if not embed_url:
-                print("Nenhum embed de vídeo encontrado na página.")
-                sys.exit(1)
-            print(f"[embed detectado] {embed_url}")
-            sources, safe_title = _resolve_embed(embed_url, page_title, referer=url)
+                # no external embed — try to find video URLs in page JS/JSON
+                sources = extract_sources(page_html)
+                if not sources:
+                    print("Nenhum embed ou fonte de vídeo encontrado na página.")
+                    sys.exit(1)
+                safe_title = re.sub(r'[\\/*?:"<>|]', "_", page_title or "video")
+            else:
+                print(f"[embed detectado] {embed_url}")
+                sources, safe_title = _resolve_embed(embed_url, page_title, referer=url)
         if not sources:
             print("Nenhum formato de vídeo encontrado.")
             sys.exit(1)

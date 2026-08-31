@@ -8,6 +8,7 @@ Download `.ts` video segments in parallel, merge them into a single video file, 
 - ffmpeg with NVENC support — recommended: [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) `win64-gpl` build
 - NVIDIA GPU (GTX/RTX series)
 - Python dependencies: `uv sync`
+- Chromium for the browser fallback in `extract_video.py`: `uv run playwright install chromium`
 
 ---
 
@@ -117,7 +118,23 @@ python extract_video.py -
 
 # Read HTML from clipboard (requires: pip install pyperclip)
 python extract_video.py
+
+# Pass a page URL directly
+python extract_video.py https://example.com/video/123
 ```
+
+### How a URL is resolved
+
+Given a page URL, the script walks down this chain and stops at the first step that yields a video:
+
+1. **yt-dlp** on the URL itself.
+2. **Page HTML** — finds the embed `<iframe>` (including protocol-relative `//host/...` sources) or video URLs in inline JS/JSON.
+3. **Host-specific extractors** for the embed — Vinovo, MixDrop, DoodStream.
+4. **Browser fallback** — opens the embed in headless Chromium and captures the video the player loads.
+
+The browser fallback is what covers players that build their URL in obfuscated JS or fetch it encrypted from an API, where there is nothing in the HTML to match. It blocks popunder hosts (they hijack the tab and kill the player) but deliberately lets ad SDKs load, since players with a pre-roll never request the content if the ad chain fails. It reads the `<video>` element's `currentSrc` — including inside shadow DOM — so it returns the content rather than the pre-roll creative.
+
+Note that these hosts hand out **signed URLs that expire within minutes**, so download right after extracting. Some players are hardened enough to refuse to start under automation; those fail with `Nenhum formato de vídeo encontrado`.
 
 ### Example output
 
